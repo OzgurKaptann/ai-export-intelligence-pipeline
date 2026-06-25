@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer completed.  
-> CSV ingestion, idempotency, mock LLM, real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer and CSV ingestion completed.  
+> Idempotency key generation and CSV ingestion are implemented; mock LLM, real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
@@ -46,13 +46,13 @@ Completed so far:
 - SQLAlchemy 2.0 ORM models
 - Database session factory
 - Repository layer
-- Unit tests for configuration, schemas, ORM models and repository behavior
-- **110 passing unit tests**
+- Deterministic idempotency key generation
+- CSV ingestion module (validates rows with `RawLeadSchema`, generates idempotency keys, delegates persistence to the repository layer)
+- Unit tests for configuration, schemas, ORM models, repository behavior and CSV ingestion
+- **137 passing unit tests**
 
 Planned next:
 
-- Idempotency key generation
-- CSV ingestion module
 - Structured logging
 - Mock LLM provider
 - Prompt builder
@@ -126,6 +126,29 @@ sequenceDiagram
     DB-->>DB: Generate data_quality_report
     DB->>API: Serve scored leads and reports
 ```
+
+---
+
+## CSV Ingestion
+
+The CSV ingestion module (`src/ingestion/csv_ingestion.py`) is the entry point of the pipeline's data layer. Its single public function:
+
+```python
+ingest_csv_file(file_path, pipeline_run_id, repository) -> IngestionResult
+```
+
+reads each row from a UTF-8 CSV file with `csv.DictReader` and processes it as follows:
+
+- **Required columns:** `company_name`, `contact_email`, `product_category`.
+- **Optional columns:** `contact_phone`, `annual_revenue`, `target_market`.
+- Each row is validated with `RawLeadSchema`.
+- **Valid rows** are written to `raw_leads` **and** `validated_leads` in the same logical step, after a deterministic `idempotency_key` is generated and the original CSV row is preserved in `raw_csv_row`.
+- **Invalid rows** are recorded in `validation_errors` (with the offending field and message) and never reach `raw_leads` or `validated_leads`.
+- Row-level validation failures are isolated, so one malformed row does not stop the rest of the file; file-level errors (such as a missing file) are not swallowed.
+
+The module is pure application logic around CSV parsing, schema validation and idempotency key generation. It never creates a database session and delegates all persistence to an injected `PipelineRepository`. The returned `IngestionResult` reports the `total`, `inserted` and `failed` counts for the run.
+
+> Duplicate-handling modes (`skip` / `update` / `reprocess`) are not implemented yet — ingestion currently generates and stores the idempotency key only.
 
 ---
 
@@ -336,12 +359,13 @@ Current unit test coverage includes:
 - enrichment output validation,
 - SQLAlchemy model metadata,
 - database session factory,
-- repository method behavior.
+- repository method behavior,
+- CSV ingestion behavior.
 
 Latest local result:
 
 ```text
-110 passed
+137 passed
 ```
 
 ---
@@ -390,9 +414,9 @@ LOG_LEVEL=INFO
 
 ### Data Pipeline
 
-- CSV ingestion
-- Row-level validation
-- Idempotency key generation
+- CSV ingestion — **implemented**
+- Row-level validation — **implemented**
+- Idempotency key generation — **implemented**
 - Duplicate handling modes: `skip`, `update`, `reprocess`
 - Pipeline run tracking
 - Data quality reporting
