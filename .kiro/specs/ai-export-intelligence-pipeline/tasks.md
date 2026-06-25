@@ -107,8 +107,8 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `ingest_file("data/sample/leads.csv", run_id, session)` succeeds; valid rows appear in both `raw_leads` and `validated_leads`; invalid rows appear only in `validation_errors`; duplicate rows on second run are skipped (skip mode)
   - **Suggested commit:** `feat(ingestion): add csv ingestion with idempotency, raw+validated insert, and error recording`
 
-- [ ] 9. Structlog configuration and logging setup
-  - Implement `src/logging.py` with `configure_logging()` that sets up structlog with JSON output, timestamp, level, and contextual fields (pipeline_run_id, lead_id, stage)
+- [x] 9. Structlog configuration and logging setup
+  - Implement `src/logging_config.py` (named `logging_config.py` to avoid shadowing the stdlib `logging` module) with `configure_logging()` that sets up structlog with console or JSON output, timestamp, level, and helpers (`get_logger`, `bind_pipeline_context` for pipeline_run_id / component)
   - Call `configure_logging()` at application entry points
   - _Requirements: 14.1, 14.4_
   - **Files to create:** `src/logging.py`

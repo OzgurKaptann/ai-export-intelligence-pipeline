@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer and CSV ingestion completed.  
-> Idempotency key generation and CSV ingestion are implemented; mock LLM, real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion and structured logging completed.  
+> Idempotency key generation, CSV ingestion and structured logging are implemented; mock LLM, real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
@@ -48,12 +48,12 @@ Completed so far:
 - Repository layer
 - Deterministic idempotency key generation
 - CSV ingestion module (validates rows with `RawLeadSchema`, generates idempotency keys, delegates persistence to the repository layer)
-- Unit tests for configuration, schemas, ORM models, repository behavior and CSV ingestion
-- **137 passing unit tests**
+- Structured logging setup with `structlog` (`configure_logging`, `get_logger`, `bind_pipeline_context`; console or JSON output)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion and logging setup
+- **157 passing unit tests**
 
 Planned next:
 
-- Structured logging
 - Mock LLM provider
 - Prompt builder
 - Retry policy
@@ -360,12 +360,13 @@ Current unit test coverage includes:
 - SQLAlchemy model metadata,
 - database session factory,
 - repository method behavior,
-- CSV ingestion behavior.
+- CSV ingestion behavior,
+- structured logging setup.
 
 Latest local result:
 
 ```text
-137 passed
+157 passed
 ```
 
 ---
@@ -449,10 +450,10 @@ LOG_LEVEL=INFO
 
 ### Production Readiness
 
+- Structured logs — **implemented**
 - Docker Compose
 - PostgreSQL integration tests
 - Smoke tests
-- Structured logs
 - README demo flow
 - Sample data
 
