@@ -34,7 +34,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `feat(config): add pydantic settings with env var defaults and .env.example`
 
 
-- [ ] 3. Pydantic input and enrichment schemas
+- [x] 3. Pydantic input and enrichment schemas
   - Implement `src/validation/input_schemas.py`: `RawLeadSchema` (company_name, contact_email, contact_phone, product_category, annual_revenue, target_market) with `EmailStr`, optional fields, and field validators
   - Implement `src/validation/enrichment_schemas.py`: `EnrichmentOutputSchema` (market_potential 0–1, export_readiness 0–1, risk_assessment dict, recommended_markets list[str], confidence_score 0–1) with range validators using `field_validator`
   - Add `RiskAssessmentSchema` as a nested model with `overall_risk: float` (0–1)
