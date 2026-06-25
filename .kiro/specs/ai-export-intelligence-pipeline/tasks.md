@@ -22,7 +22,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** All directories exist; all `__init__.py` files present; `pip install` succeeds
   - **Suggested commit:** `chore: scaffold project structure and pin dependencies`
 
-- [ ] 2. Environment config and settings module
+- [x] 2. Environment config and settings module
   - Implement `src/config.py` using `pydantic_settings.BaseSettings` (from the `pydantic-settings` package, required for Pydantic v2) to read all env vars from the table in design.md
   - Include defaults: `MOCK_LLM_ENABLED=true`, `KB_ENABLED=false`, `IDEMPOTENCY_MODE=skip`, `RETRY_MAX_ATTEMPTS=3`, `RETRY_DELAY_SECONDS=2.0`, `LLM_TIMEOUT_SECONDS=30`, `LOG_LEVEL=INFO`, `HYPOTHESIS_PROFILE=dev`
   - `DATABASE_URL` is required — application raises `SystemExit` with a clear message if missing
