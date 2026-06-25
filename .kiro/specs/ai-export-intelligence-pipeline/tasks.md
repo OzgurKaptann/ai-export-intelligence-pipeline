@@ -45,7 +45,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `RawLeadSchema.model_validate(valid_dict)` succeeds; invalid dicts raise `ValidationError` with field name in error message
   - **Suggested commit:** `feat(validation): add RawLeadSchema and EnrichmentOutputSchema with pydantic v2`
 
-- [ ] 4. PostgreSQL schema migration
+- [x] 4. PostgreSQL schema migration
   - Write `migrations/001_initial_schema.sql` creating all 7 tables in the correct FK order: `pipeline_runs` first, then `raw_leads`, `validated_leads`, `enrichments`, `scored_leads`, `data_quality_reports`, `validation_errors`
   - Include all columns, types, constraints, indexes defined in the design data models section
   - Add `CREATE EXTENSION IF NOT EXISTS "pgcrypto"` for `gen_random_uuid()`
