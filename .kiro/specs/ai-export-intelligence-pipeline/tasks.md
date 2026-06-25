@@ -56,7 +56,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** Migration applies cleanly on empty PostgreSQL 15; re-running is idempotent (use `CREATE TABLE IF NOT EXISTS`)
   - **Suggested commit:** `feat(db): add initial schema migration for all 7 tables`
 
-- [ ] 5. SQLAlchemy ORM models and database session
+- [x] 5. SQLAlchemy ORM models and database session
   - Implement `src/database/models.py` with SQLAlchemy 2.0 mapped classes for all 7 tables (pipeline_runs, raw_leads, validated_leads, enrichments, scored_leads, data_quality_reports, validation_errors), mirroring the SQL schema exactly
   - Implement `src/database/session.py` with `get_engine(database_url)`, `SessionLocal` factory, and `get_db()` generator for FastAPI dependency injection
   - Use `UUID` type with `server_default=text("gen_random_uuid()")` for primary keys
