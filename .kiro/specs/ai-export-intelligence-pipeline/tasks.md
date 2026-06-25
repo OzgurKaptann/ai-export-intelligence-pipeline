@@ -76,25 +76,29 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `feat(db): add pipeline repository with all CRUD methods`
 
 
-- [ ] 7. Idempotency key generation logic
+- [x] 7. Deterministic idempotency key generation
   - Implement `src/ingestion/idempotency.py` with `generate_idempotency_key(lead_dict: dict) -> str`
-  - Use SHA256 hash of `company_name + contact_email + product_category` (after lowercasing and stripping whitespace for normalization)
+  - Build the key from `company_name`, `contact_email`, `product_category` and `target_market` using deterministic SHA-256 hashing
+  - Accept both `dict` and `RawLeadSchema` input
+  - Normalize whitespace, casing, `None`, empty values and missing `target_market` consistently
   - Return 64-char hex string
   - _Requirements: 20.1_
   - **Files to create:** `src/ingestion/idempotency.py`
   - **Expected tests:** `tests/unit/test_idempotency.py` — same dict produces same key twice; property test P16 (determinism); whitespace/case variations normalize correctly
-  - **Acceptance criteria:** `generate_idempotency_key(d1) == generate_idempotency_key(d2)` when d1 and d2 have same company_name, contact_email, product_category (case-insensitive)
+  - **Acceptance criteria:** `generate_idempotency_key(d1) == generate_idempotency_key(d2)` when d1 and d2 have the same company_name, contact_email, product_category and target_market after normalization
   - **Suggested commit:** `feat(ingestion): add deterministic idempotency key generator`
 
-- [ ] 8. CSV ingestion module with idempotency handling
-  - Implement `src/ingestion/csv_ingestion.py` with `CSVIngestionModule` class exposing `ingest_file(file_path, pipeline_run_id, session)` → `IngestionResult`
+- [x] 8. CSV ingestion module with idempotency handling
+  - Implement `src/ingestion/csv_ingestion.py` exposing `ingest_csv_file(file_path, pipeline_run_id, repository) -> IngestionResult`
+  - Accept an injected `PipelineRepository`-like `repository` object; do not create database sessions
   - Parse CSV using Python `csv.DictReader`, validate row presence, handle encoding errors
   - For each row:
-    1. Generate idempotency key → check if exists → apply `IDEMPOTENCY_MODE` (skip/update/reprocess)
-    2. If new or reprocessed: validate with `RawLeadSchema`
-       - **On validation success**: insert `raw_leads` record AND immediately insert `validated_leads` record (both in the same transaction for this row)
-       - **On validation failure**: insert `validation_errors` record; do NOT insert `validated_leads`
-  - Log skip/update/reprocess events with structlog
+    1. Generate idempotency key with `generate_idempotency_key` and store it on the `raw_leads` payload
+    2. Validate with `RawLeadSchema`
+       - **On validation success**: insert valid rows through `insert_raw_lead` and `insert_validated_lead` (both in the same transaction for this row)
+       - **On validation failure**: record invalid rows through `insert_validation_error`; do NOT insert `validated_leads`
+  - Keep row-level validation failures isolated
+  - Do not implement skip/update/reprocess behavior in this task; duplicate handling will be added in a later task
   - Return counts: total, inserted, skipped, failed
   - The orchestrator reads `validated_leads` filtered by `pipeline_run_id` when iterating leads for enrichment
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 2.3, 20.2–20.9_
