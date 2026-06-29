@@ -129,7 +129,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `feat(enrichment): add deterministic mock llm provider for keyless testing`
 
 
-- [ ] 11. Prompt builder
+- [x] 11. Prompt builder
   - Implement `src/enrichment/prompt_builder.py` with `build_prompt(lead: RawLeadSchema, context: Optional[str], prompt_version: str) -> str`
   - Template includes all lead fields (company_name, product_category, target_market, annual_revenue, contact_email)
   - Append optional `context` section if provided
