@@ -5,14 +5,14 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate, the enrichment retry orchestration loop, the lead scoring module and the knowledge base stub completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage) and the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far), the pipeline orchestrator, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate, the enrichment retry orchestration loop, the lead scoring module, the knowledge base stub and the pipeline orchestrator (with `pipeline_run` lifecycle tracking) completed.  
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`) and the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far), data quality reports, FastAPI, the Streamlit dashboard, Docker, and full PostgreSQL/Docker integration and smoke tests are planned for upcoming iterations.
 
 ---
 
 ## Repository Description
 
-Spec-driven AI export intelligence pipeline built with Python, PostgreSQL, SQLAlchemy, Pydantic and Kiro. Currently includes validation schemas, database migrations, ORM models, repository layer, CSV ingestion, mock-mode LLM enrichment with a validation gate, lead scoring and test coverage; real OpenAI enrichment, the pipeline orchestrator, API and dashboard features are planned.
+Spec-driven AI export intelligence pipeline built with Python, PostgreSQL, SQLAlchemy, Pydantic and Kiro. Currently includes validation schemas, database migrations, ORM models, repository layer, CSV ingestion, mock-mode LLM enrichment with a validation gate, lead scoring, the pipeline orchestrator with `pipeline_run` tracking and test coverage; real OpenAI enrichment, data quality reports, API and dashboard features are planned.
 
 ---
 
@@ -56,14 +56,15 @@ Completed so far:
 - Enrichment retry orchestration (`LLMEnrichmentModule.enrich_with_retry`; wraps `enrich_lead` in a retry loop that retries only the transient statuses — `timeout`, `network_error`, `rate_limited` — using the shared retry policy, waits `RETRY_DELAY_SECONDS * (2 ** retry_count) + jitter` between attempts, stops at `RETRY_MAX_ATTEMPTS`, reuses the injected session and never opens its own; sleep/backoff are injectable for keyless, delay-free testing)
 - Lead scoring module (`LeadScorerModule.score_lead`; computes a 0–100 score with the weighted formula `(market_potential * 0.4 + export_readiness * 0.4 + (1 - overall_risk) * 0.2) * 100`, defaults missing or invalid components to 0.0, clamps the result to `[0, 100]`, stores `score` plus a `score_breakdown` JSONB through the injected repository, reuses the injected session and never opens its own — no API key, no network)
 - Knowledge base module stub (`KnowledgeBaseModule`; `retrieve_context(product_category, target_market)` always returns `None`, `is_enabled` reads `KB_ENABLED` lazily through an injectable settings provider — no import-time side effects, no embeddings, no vector store, no real retrieval yet)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier, the LLM enrichment module, the enrichment retry orchestration, the lead scoring module and the knowledge base stub
-- **325 passing unit tests**
+- Pipeline orchestrator with `pipeline_run` tracking (`PipelineOrchestrator.run`; generates the `pipeline_run_id`, creates the `pipeline_runs` record with `status="in_progress"` and `started_at`, calls CSV ingestion, then for each validated lead calls `enrich_with_retry` and — only on success — `score_lead`, isolating per-lead failures so one bad lead never stops the run, and updates the run to `completed`/`failed` with `finished_at` and counts; fully dependency-injected — `session_factory`, `repository_factory`, ingestion function, enrichment/scorer modules, `uuid_factory` and `clock` are all injectable — opens exactly one session per run and reuses it for every lead, with no import-time settings load or session creation, no API key and no network)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier, the LLM enrichment module, the enrichment retry orchestration, the lead scoring module, the knowledge base stub and the pipeline orchestrator
+- **344 passing unit tests**
 
 Planned next:
 
 - Real knowledge base retrieval (RAG / vector search)
 - Real OpenAI enrichment integration (production wiring)
-- Pipeline orchestrator
+- Data quality reports
 - FastAPI endpoints
 - Streamlit dashboard
 - Docker Compose setup
@@ -372,12 +373,13 @@ Current unit test coverage includes:
 - LLM enrichment module behavior (validation gate and failure taxonomy mapping),
 - enrichment retry orchestration behavior (retryable vs non-retryable handling, retry-count ceiling, exponential backoff with jitter, injected session reuse),
 - lead scoring behavior (formula correctness, all-zeros/all-ones edge cases, score bounds, missing/invalid component defaulting, breakdown storage, injected session reuse, no input mutation),
-- knowledge base stub behavior (`retrieve_context` always returns `None`, `is_enabled` reads `KB_ENABLED` lazily through an injectable settings provider, no import-time side effects, no input mutation).
+- knowledge base stub behavior (`retrieve_context` always returns `None`, `is_enabled` reads `KB_ENABLED` lazily through an injectable settings provider, no import-time side effects, no input mutation),
+- pipeline orchestrator behavior (run lifecycle from `in_progress` to `completed`/`failed`, ingestion called with the generated `pipeline_run_id`, enrichment of every validated lead, scoring of only successfully enriched leads, per-lead enrichment/scoring failures not stopping the run, single injected session reused across all leads, no `OPENAI_API_KEY` and no external API).
 
 Latest local result:
 
 ```text
-325 passed
+344 passed
 ```
 
 ---
@@ -430,7 +432,8 @@ LOG_LEVEL=INFO
 - Row-level validation — **implemented**
 - Idempotency key generation — **implemented**
 - Duplicate handling modes: `skip`, `update`, `reprocess`
-- Pipeline run tracking
+- Pipeline orchestrator — **implemented**
+- Pipeline run tracking — **implemented**
 - Data quality reporting
 
 ### AI Enrichment
@@ -502,11 +505,12 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - enrichment retry orkestrasyonu (`LLMEnrichmentModule.enrich_with_retry`; `enrich_lead` çağrısını bir retry döngüsüne sarar, yalnızca geçici hataları yeniden dener — `timeout`, `network_error`, `rate_limited` — paylaşılan retry policy’yi kullanır, denemeler arasında `RETRY_DELAY_SECONDS * (2 ** retry_count) + jitter` kadar bekler, `RETRY_MAX_ATTEMPTS` sınırında durur, enjekte edilen session’ı yeniden kullanır ve kendi session’ını açmaz; sleep/backoff davranışı anahtar gerektirmeyen ve gecikmesiz testler için enjekte edilebilir),
 - lead scoring modülü (`LeadScorerModule.score_lead`; `(market_potential * 0.4 + export_readiness * 0.4 + (1 - overall_risk) * 0.2) * 100` ağırlıklı formülüyle 0–100 arası bir skor hesaplar, eksik veya geçersiz bileşenleri 0.0 olarak varsayar, sonucu `[0, 100]` aralığına sıkıştırır, `score` ve `score_breakdown` (JSONB) değerlerini enjekte edilen repository üzerinden saklar, enjekte edilen session’ı yeniden kullanır ve kendi session’ını açmaz; API anahtarı ve ağ erişimi gerektirmez),
 - knowledge base modülü stub’ı (`KnowledgeBaseModule`; `retrieve_context(product_category, target_market)` her zaman `None` döner, `is_enabled` ise `KB_ENABLED` değerini enjekte edilebilir bir settings sağlayıcısı üzerinden lazy olarak okur; import anında yan etki yoktur, henüz embedding, vektör veritabanı veya gerçek bağlam getirme uygulanmamıştır),
+- pipeline orkestratörü ve `pipeline_run` takibi (`PipelineOrchestrator.run`; `pipeline_run_id` üretir, `pipeline_runs` kaydını `status="in_progress"` ve `started_at` ile oluşturur, CSV ingestion’ı çağırır, ardından her doğrulanmış lead için `enrich_with_retry` çağırır ve yalnızca başarılı olanları `score_lead` ile skorlar; her lead’i ayrı ayrı izole eder, böylece tek bir hatalı lead tüm akışı durdurmaz; sonunda kaydı `finished_at` ve sayaçlarla `completed`/`failed` olarak günceller; tamamen bağımlılık enjeksiyonludur — `session_factory`, `repository_factory`, ingestion fonksiyonu, enrichment/scorer modülleri, `uuid_factory` ve `clock` enjekte edilebilir — çalışma başına tek bir session açıp tüm lead’ler için yeniden kullanır; import anında ayar yüklemez, session oluşturmaz, API anahtarı ve ağ erişimi gerektirmez),
 - unit testler.
 
-Toplam **325 unit test** başarıyla geçmektedir.
+Toplam **344 unit test** başarıyla geçmektedir.
 
-Gelecek aşamalarda gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), pipeline orkestratörü, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
+Gelecek aşamalarda gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), veri kalitesi raporları, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve tam PostgreSQL/Docker entegrasyon ve smoke testleri eklenecektir. Pipeline orkestratörü uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir; tam Docker/PostgreSQL entegrasyonu ise henüz planlanmaktadır.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
@@ -515,5 +519,5 @@ Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine 
 ## Status Note
 
 This repository is under active development.  
-The current version covers the data layer and per-lead processing: schema design, validation, database modeling, repository behavior, CSV ingestion, structured logging, mock-mode LLM enrichment with a validation gate, retry orchestration and lead scoring.  
-A knowledge base stub is in place (`retrieve_context` returns `None`); upcoming iterations will add the pipeline orchestrator, data quality reports, real knowledge base retrieval (RAG / vector search), production OpenAI wiring, the FastAPI and Streamlit layers, Docker/deployment, and integration and smoke tests.
+The current version covers the data layer, per-lead processing and end-to-end orchestration: schema design, validation, database modeling, repository behavior, CSV ingestion, structured logging, mock-mode LLM enrichment with a validation gate, retry orchestration, lead scoring and the pipeline orchestrator with `pipeline_run` lifecycle tracking.  
+A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator is unit-testable with fake dependencies, while full Docker/PostgreSQL integration and smoke tests remain planned. Upcoming iterations will add data quality reports, real knowledge base retrieval (RAG / vector search), production OpenAI wiring, the FastAPI and Streamlit layers, Docker/deployment, and integration and smoke tests.
