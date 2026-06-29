@@ -151,10 +151,10 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `is_retryable("timeout")` returns `True`; `is_retryable("validation_failed")` returns `False`; `should_retry("timeout", 3, 3)` returns `False`
   - **Suggested commit:** `feat(enrichment): add retry policy classifier for failure taxonomy`
 
-- [ ] 13. LLM enrichment module with validation gate
+- [x] 13. LLM enrichment module with validation gate
   - Implement `src/enrichment/llm_enrichment.py` with `LLMEnrichmentModule` class and `enrich_lead(validated_lead_id: UUID, lead: RawLeadSchema, idempotency_key: str, pipeline_run_id: UUID, session: Session) -> EnrichmentResult`
-  - Check `MOCK_LLM_ENABLED` config: if `true`, call `MockLLMProvider.generate()`; if `false`, call real OpenAI API with `client.chat.completions.create()` using structured output
-  - Both paths converge at validation: parse JSON response → `EnrichmentOutputSchema.model_validate_json(raw_response)`
+  - Check `MOCK_LLM_ENABLED` config: if `true`, call `MockLLMProvider.enrich_lead()` (current API; returns a validated `EnrichmentOutputSchema`); if `false`, call the real OpenAI boundary `_call_real_llm()` (isolated and monkeypatch-ready; production wiring lands in task 26)
+  - Both paths converge at the validation gate: a raw JSON string is parsed and validated, a mapping or pre-validated schema instance is re-validated → `EnrichmentOutputSchema.model_validate(...)`
   - On success: store enrichment record (status=`success`, all enrichment fields populated, `prompt_version="v1.0"`, `model_name` from provider)
   - On failure: classify `enrichment_status` (validation_failed, timeout, network_error, etc.) → store error fields (`error_type`, `error_message`, `failed_at`, `retry_count=0`, `raw_llm_response` if JSON parse failed) → check retry eligibility → return `EnrichmentResult` with retry decision
   - Use `prompt_builder.build_prompt()` to construct the prompt

@@ -5,14 +5,14 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder and the retry policy classifier completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder and the retry policy classifier are implemented; real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier and the LLM enrichment module with validation gate completed.  
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier and the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate) are implemented; real OpenAI enrichment (boundary only so far), retry orchestration, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
 ## Repository Description
 
-Spec-driven AI export intelligence pipeline built with Python, PostgreSQL, SQLAlchemy, Pydantic and Kiro. Currently includes validation schemas, database migrations, ORM models, repository layer and test coverage; ingestion, LLM enrichment, scoring, API and dashboard features are planned.
+Spec-driven AI export intelligence pipeline built with Python, PostgreSQL, SQLAlchemy, Pydantic and Kiro. Currently includes validation schemas, database migrations, ORM models, repository layer, CSV ingestion, mock-mode LLM enrichment with a validation gate and test coverage; real OpenAI enrichment, scoring, API and dashboard features are planned.
 
 ---
 
@@ -52,12 +52,14 @@ Completed so far:
 - Deterministic mock LLM provider (`MockLLMProvider.enrich_lead`; schema-valid synthetic enrichment, no API key, no network, no database)
 - Enrichment prompt builder (`build_enrichment_prompt`; deterministic, offline prompt text including lead fields and the `EnrichmentOutputSchema` JSON output contract)
 - Retry policy classifier (`is_retryable`, `should_retry`; pure, deterministic classification of the 9-value enrichment failure taxonomy — `timeout`, `network_error` and `rate_limited` are retryable, all others are not)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder and the retry policy classifier
-- **250 passing unit tests**
+- LLM enrichment module with validation gate (`LLMEnrichmentModule.enrich_lead`; selects the mock provider when `MOCK_LLM_ENABLED=true`, validates every output with `EnrichmentOutputSchema`, persists success or failure metadata through the injected repository, and maps failures onto the enrichment status taxonomy — `success`, `validation_failed`, `empty_response`, `invalid_json`, `unknown_error`; the real OpenAI call is an isolated, monkeypatch-ready boundary, not yet production-wired)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier and the LLM enrichment module
+- **265 passing unit tests**
 
 Planned next:
 
-- LLM response validation gate
+- Real OpenAI enrichment integration (production wiring)
+- Enrichment retry orchestration loop
 - Lead scoring module
 - Pipeline orchestrator
 - FastAPI endpoints
@@ -364,12 +366,13 @@ Current unit test coverage includes:
 - structured logging setup,
 - mock LLM provider behavior,
 - enrichment prompt builder behavior,
-- retry policy classifier behavior.
+- retry policy classifier behavior,
+- LLM enrichment module behavior (validation gate and failure taxonomy mapping).
 
 Latest local result:
 
 ```text
-250 passed
+265 passed
 ```
 
 ---
@@ -431,10 +434,11 @@ LOG_LEVEL=INFO
 - Enrichment prompt builder — **implemented**
 - Retry policy classifier — **implemented**
 - Enrichment failure taxonomy classification — **implemented**
-- Real LLM integration
-- Structured JSON response validation
+- LLM enrichment module with validation gate (mock mode) — **implemented**
+- Structured JSON response validation — **implemented**
+- Real LLM integration (production wiring; boundary in place)
 - Retry handling (orchestration loop)
-- Prompt and model traceability
+- Prompt and model traceability — **implemented**
 
 ### Lead Scoring
 
@@ -484,11 +488,12 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - deterministik mock LLM sağlayıcısı,
 - enrichment prompt builder (`build_enrichment_prompt`; deterministik, çevrimdışı prompt metni; lead alanları ve `EnrichmentOutputSchema` JSON çıktı sözleşmesi dahil),
 - retry policy sınıflandırıcısı (`is_retryable`, `should_retry`; saf ve deterministik; 9 değerli enrichment hata taksonomisini sınıflandırır — `timeout`, `network_error` ve `rate_limited` yeniden denenebilir, diğerleri denenmez),
+- doğrulama kapılı LLM enrichment modülü (`LLMEnrichmentModule.enrich_lead`; `MOCK_LLM_ENABLED=true` iken mock sağlayıcıyı seçer, her çıktıyı `EnrichmentOutputSchema` ile doğrular, başarı veya hata bilgisini enjekte edilen repository üzerinden saklar ve hataları enrichment durum taksonomisine eşler — `success`, `validation_failed`, `empty_response`, `invalid_json`, `unknown_error`; gerçek OpenAI çağrısı ise izole ve monkeypatch ile test edilebilir bir sınır olup henüz üretim için bağlanmamıştır),
 - unit testler.
 
-Toplam **250 unit test** başarıyla geçmektedir.
+Toplam **265 unit test** başarıyla geçmektedir.
 
-Gelecek aşamalarda gerçek LLM enrichment, retry orkestrasyonu (retry döngüsü), lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
+Gelecek aşamalarda gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), retry orkestrasyonu (retry döngüsü), lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
