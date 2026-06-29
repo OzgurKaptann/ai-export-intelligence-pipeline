@@ -116,8 +116,8 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** All log entries are valid JSON with required fields
   - **Suggested commit:** `feat(logging): add structlog json logging setup`
 
-- [ ] 10. Mock LLM provider
-  - Implement `src/enrichment/mock_llm.py` with `MockLLMProvider` class and `generate(lead: RawLeadSchema, idempotency_key: str) -> str` method
+- [x] 10. Mock LLM provider
+  - Implemented `src/enrichment/mock_llm.py` with `MockLLMProvider` exposing `enrich_lead(lead, context=None) -> EnrichmentOutputSchema` (returns a validated schema instance rather than a raw JSON string; seeded deterministically from the lead's content)
   - Return deterministic synthetic JSON seeded by `idempotency_key` using Python `random.Random(seed=idempotency_key)`
   - Output must always pass `EnrichmentOutputSchema` validation: `market_potential`, `export_readiness`, `confidence_score` all floats in [0, 1]; `risk_assessment` dict with `overall_risk`; `recommended_markets` list[str]
   - Return the JSON as a string (simulate LLM API response)

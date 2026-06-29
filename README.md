@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion and structured logging completed.  
-> Idempotency key generation, CSV ingestion and structured logging are implemented; mock LLM, real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging and the deterministic mock LLM provider completed.  
+> Idempotency key generation, CSV ingestion, structured logging and the mock LLM provider are implemented; real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
@@ -49,12 +49,12 @@ Completed so far:
 - Deterministic idempotency key generation
 - CSV ingestion module (validates rows with `RawLeadSchema`, generates idempotency keys, delegates persistence to the repository layer)
 - Structured logging setup with `structlog` (`configure_logging`, `get_logger`, `bind_pipeline_context`; console or JSON output)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion and logging setup
-- **157 passing unit tests**
+- Deterministic mock LLM provider (`MockLLMProvider.enrich_lead`; schema-valid synthetic enrichment, no API key, no network, no database)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup and the mock LLM provider
+- **178 passing unit tests**
 
 Planned next:
 
-- Mock LLM provider
 - Prompt builder
 - Retry policy
 - LLM response validation gate
@@ -361,12 +361,13 @@ Current unit test coverage includes:
 - database session factory,
 - repository method behavior,
 - CSV ingestion behavior,
-- structured logging setup.
+- structured logging setup,
+- mock LLM provider behavior.
 
 Latest local result:
 
 ```text
-157 passed
+178 passed
 ```
 
 ---
@@ -424,7 +425,7 @@ LOG_LEVEL=INFO
 
 ### AI Enrichment
 
-- Deterministic mock LLM mode
+- Deterministic mock LLM mode — **implemented**
 - Real LLM integration
 - Structured JSON response validation
 - Retry handling
