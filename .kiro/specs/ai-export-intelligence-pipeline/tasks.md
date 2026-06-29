@@ -141,7 +141,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `build_prompt(lead, None, "v1.0")` returns string containing `lead.company_name`, `lead.product_category`, `lead.target_market`
   - **Suggested commit:** `feat(enrichment): add structured prompt builder for llm enrichment`
 
-- [ ] 12. Retry policy classifier
+- [x] 12. Retry policy classifier
   - Implement `src/enrichment/retry_policy.py` with `is_retryable(enrichment_status: str) -> bool` and `should_retry(enrichment_status: str, retry_count: int, max_retries: int) -> bool`
   - Retryable: `timeout`, `network_error`, `rate_limited`
   - Non-retryable: all other statuses
