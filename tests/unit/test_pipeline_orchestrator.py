@@ -193,6 +193,22 @@ class FakeScorerModule:
         return ScoringResult(scored_lead_id=uuid4(), score=76.0)
 
 
+class FakeDataQuality:
+    """Records data-quality report calls; optionally raises to test resilience."""
+
+    def __init__(self, raises: Exception = None) -> None:
+        self._raises = raises
+        self.calls: list = []
+
+    def __call__(self, pipeline_run_id, session):
+        self.calls.append({"pipeline_run_id": pipeline_run_id, "session": session})
+        if self._raises is not None:
+            raise self._raises
+        return SimpleNamespace(
+            report_id="report-1", pipeline_run_id=pipeline_run_id
+        )
+
+
 def success_result(enrichment_id="enr-1") -> EnrichmentResult:
     return EnrichmentResult(
         enrichment_status="success", enrichment_id=enrichment_id
@@ -219,6 +235,7 @@ def build_orchestrator(
     ingestion_raises=None,
     scorer_raises_for=None,
     session=None,
+    data_quality_raises=None,
 ):
     """Wire an orchestrator around fakes and return everything for assertions."""
     validated_leads = validated_leads or []
@@ -232,6 +249,7 @@ def build_orchestrator(
     ingestion = FakeIngestion(ingestion_result, raises=ingestion_raises)
     enrichment = FakeEnrichmentModule(enrichment_results)
     scorer = FakeScorerModule(raises_for=scorer_raises_for)
+    data_quality = FakeDataQuality(raises=data_quality_raises)
 
     session_factory_calls = []
 
@@ -245,6 +263,7 @@ def build_orchestrator(
         ingestion_func=ingestion,
         enrichment_module=enrichment,
         scorer_module=scorer,
+        data_quality_func=data_quality,
         uuid_factory=lambda: RUN_UUID,
         clock=lambda: FIXED_TIME,
     )
@@ -256,6 +275,7 @@ def build_orchestrator(
         ingestion=ingestion,
         enrichment=enrichment,
         scorer=scorer,
+        data_quality=data_quality,
         session_factory_calls=session_factory_calls,
     )
 
@@ -517,6 +537,62 @@ def test_successful_run_commits_session():
     ctx = build_orchestrator()
     ctx.orchestrator.run(FILE_PATH)
     assert ctx.session.committed >= 1
+
+
+# ---------------------------------------------------------------------------
+# Data quality report generation (Task 18)
+# ---------------------------------------------------------------------------
+
+def test_run_generates_data_quality_report_after_completion():
+    ctx = build_orchestrator()
+
+    result = ctx.orchestrator.run(FILE_PATH)
+
+    assert result.status == STATUS_COMPLETED
+    assert len(ctx.data_quality.calls) == 1
+    call = ctx.data_quality.calls[0]
+    assert call["pipeline_run_id"] == str(RUN_UUID)
+    # The report uses the same single session reused throughout the run.
+    assert call["session"] is ctx.session
+
+
+def test_data_quality_report_runs_after_ingestion_and_enrichment():
+    leads = [make_validated_lead("vl-1")]
+    ctx = build_orchestrator(
+        validated_leads=leads,
+        enrichment_results={"vl-1": success_result("enr-1")},
+    )
+
+    ctx.orchestrator.run(FILE_PATH)
+
+    # Ordering: ingestion and enrichment/scoring must have happened before the
+    # report is generated (the report reflects final counts).
+    assert ctx.ingestion.calls, "ingestion should run before the report"
+    assert ctx.enrichment.calls, "enrichment should run before the report"
+    assert ctx.scorer.calls, "scoring should run before the report"
+    assert len(ctx.data_quality.calls) == 1
+
+
+def test_data_quality_report_not_generated_when_ingestion_fails():
+    ctx = build_orchestrator(ingestion_raises=RuntimeError("cannot read CSV"))
+
+    result = ctx.orchestrator.run(FILE_PATH)
+
+    assert result.status == STATUS_FAILED
+    # A pipeline-level failure short-circuits before report generation.
+    assert ctx.data_quality.calls == []
+
+
+def test_report_failure_does_not_fail_completed_run():
+    ctx = build_orchestrator(
+        data_quality_raises=RuntimeError("report boom"),
+    )
+
+    result = ctx.orchestrator.run(FILE_PATH)
+
+    # Report generation is best-effort: a completed run stays completed.
+    assert result.status == STATUS_COMPLETED
+    assert len(ctx.data_quality.calls) == 1
 
 
 # ---------------------------------------------------------------------------

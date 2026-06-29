@@ -44,6 +44,7 @@ from src.database.repository import PipelineRepository
 from src.ingestion.csv_ingestion import ingest_csv_file
 from src.ingestion.idempotency import generate_idempotency_key
 from src.logging_config import get_logger
+from src.pipeline.data_quality import generate_report as generate_data_quality_report
 from src.validation.enrichment_schemas import EnrichmentOutputSchema
 
 # Status values written to the pipeline_runs row.
@@ -101,6 +102,12 @@ class PipelineOrchestrator:
     scorer_module:
         Object exposing ``score_lead(...)``.  Defaults to
         :class:`LeadScorerModule`.
+    data_quality_func:
+        Callable ``(pipeline_run_id, session) -> result`` that writes the
+        ``data_quality_reports`` row after the run completes.  Defaults to
+        :func:`src.pipeline.data_quality.generate_report`.  Report generation is
+        best-effort: a failure here is logged and never turns an otherwise
+        completed run into a failed one.
     uuid_factory:
         Zero-argument callable returning the new ``pipeline_run_id``; defaults
         to :func:`uuid.uuid4`.  Injectable for deterministic tests.
@@ -122,6 +129,7 @@ class PipelineOrchestrator:
         ingestion_func: Optional[Callable[..., Any]] = None,
         enrichment_module: Optional[Any] = None,
         scorer_module: Optional[Any] = None,
+        data_quality_func: Optional[Callable[..., Any]] = None,
         uuid_factory: Optional[Callable[[], Any]] = None,
         clock: Optional[Callable[[], datetime]] = None,
         logger: Any = None,
@@ -132,6 +140,7 @@ class PipelineOrchestrator:
         self._ingestion_func = ingestion_func or ingest_csv_file
         self._enrichment_module = enrichment_module
         self._scorer_module = scorer_module
+        self._data_quality_func = data_quality_func or generate_data_quality_report
         self._uuid_factory = uuid_factory or uuid4
         self._clock = clock or _utcnow
         self._logger = logger or get_logger(__name__)
@@ -177,6 +186,7 @@ class PipelineOrchestrator:
             self._process_validated_leads(
                 pipeline_run_id, session, repository, result
             )
+            self._generate_quality_report(pipeline_run_id, session)
 
             result.status = STATUS_COMPLETED
             repository.update_pipeline_run(
@@ -296,6 +306,31 @@ class PipelineOrchestrator:
             session=session,
         )
         result.scored_records += 1
+
+    # ------------------------------------------------------------------ #
+    # Data quality report (best-effort, after all leads are processed)
+    # ------------------------------------------------------------------ #
+
+    def _generate_quality_report(self, pipeline_run_id: str, session: Any) -> None:
+        """Write the run's ``data_quality_reports`` row, reusing the session.
+
+        Called only after ingestion, enrichment and scoring have run, so the
+        report reflects the final per-stage counts.  Report generation is
+        best-effort: any failure is logged and swallowed so a completed run is
+        never demoted to ``failed`` because reporting alone failed.
+        """
+        try:
+            self._data_quality_func(pipeline_run_id, session)
+            self._logger.info(
+                "pipeline_data_quality_report_generated",
+                pipeline_run_id=pipeline_run_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - reporting must not fail the run
+            self._logger.error(
+                "pipeline_data_quality_report_failed",
+                pipeline_run_id=pipeline_run_id,
+                error=str(exc),
+            )
 
     # ------------------------------------------------------------------ #
     # Enrichment output reload (smallest possible read through the session)
