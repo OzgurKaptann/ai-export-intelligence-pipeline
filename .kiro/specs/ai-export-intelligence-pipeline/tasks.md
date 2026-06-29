@@ -182,7 +182,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `enrich_with_retry()` for a lead that returns `timeout` 3 times increments `retry_count` to 3 and stops; `validation_failed` does not retry
   - **Suggested commit:** `feat(enrichment): add retry loop with exponential backoff`
 
-- [ ] 15. Lead scoring module
+- [x] 15. Lead scoring module
   - Implement `src/scoring/lead_scorer.py` with `LeadScorerModule` class and `score_lead(enrichment_id: UUID, enrichment: EnrichmentOutputSchema, validated_lead_id: UUID, pipeline_run_id: UUID, session: Session) -> ScoringResult`
   - Formula: `score = (market_potential * 0.4 + export_readiness * 0.4 + (1 - risk_score) * 0.2) * 100` where `risk_score = enrichment.risk_assessment.overall_risk`
   - Handle missing fields by defaulting to 0.0 for that component
