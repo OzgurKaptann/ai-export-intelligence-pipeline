@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion, structured logging and the deterministic mock LLM provider completed.  
-> Idempotency key generation, CSV ingestion, structured logging and the mock LLM provider are implemented; real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider and the enrichment prompt builder completed.  
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider and the prompt builder are implemented; real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
@@ -50,12 +50,12 @@ Completed so far:
 - CSV ingestion module (validates rows with `RawLeadSchema`, generates idempotency keys, delegates persistence to the repository layer)
 - Structured logging setup with `structlog` (`configure_logging`, `get_logger`, `bind_pipeline_context`; console or JSON output)
 - Deterministic mock LLM provider (`MockLLMProvider.enrich_lead`; schema-valid synthetic enrichment, no API key, no network, no database)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup and the mock LLM provider
-- **178 passing unit tests**
+- Enrichment prompt builder (`build_enrichment_prompt`; deterministic, offline prompt text including lead fields and the `EnrichmentOutputSchema` JSON output contract)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider and the prompt builder
+- **199 passing unit tests**
 
 Planned next:
 
-- Prompt builder
 - Retry policy
 - LLM response validation gate
 - Lead scoring module
@@ -362,12 +362,13 @@ Current unit test coverage includes:
 - repository method behavior,
 - CSV ingestion behavior,
 - structured logging setup,
-- mock LLM provider behavior.
+- mock LLM provider behavior,
+- enrichment prompt builder behavior.
 
 Latest local result:
 
 ```text
-178 passed
+199 passed
 ```
 
 ---
@@ -426,6 +427,7 @@ LOG_LEVEL=INFO
 ### AI Enrichment
 
 - Deterministic mock LLM mode — **implemented**
+- Enrichment prompt builder — **implemented**
 - Real LLM integration
 - Structured JSON response validation
 - Retry handling
@@ -466,7 +468,7 @@ Bu proje, ihracat potansiyeli olan firma ve lead verilerini uçtan uca işlemek 
 
 Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, tekrar eden kayıtları idempotency mantığıyla yönetmek, LLM veya mock LLM ile zenginleştirmek, ihracat potansiyeline göre skorlamak ve sonuçları PostgreSQL üzerinde izlenebilir şekilde saklamaktır.
 
-Şu anda projenin temel altyapısı tamamlanmıştır:
+Şu ana kadar tamamlanan bölümler:
 
 - proje iskeleti,
 - konfigürasyon yönetimi,
@@ -474,11 +476,16 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - PostgreSQL migration yapısı,
 - SQLAlchemy ORM modelleri,
 - repository katmanı,
+- idempotency anahtarı üretimi,
+- CSV ingestion modülü,
+- yapılandırılmış loglama (`structlog`),
+- deterministik mock LLM sağlayıcısı,
+- enrichment prompt builder (`build_enrichment_prompt`; deterministik, çevrimdışı prompt metni; lead alanları ve `EnrichmentOutputSchema` JSON çıktı sözleşmesi dahil),
 - unit testler.
 
-Toplam **110 unit test** başarıyla geçmektedir.
+Toplam **199 unit test** başarıyla geçmektedir.
 
-Gelecek aşamalarda CSV ingestion, idempotency, mock LLM, gerçek LLM enrichment, lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
+Gelecek aşamalarda gerçek LLM enrichment, retry yönetimi, lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
