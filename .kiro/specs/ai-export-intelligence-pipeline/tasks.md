@@ -171,7 +171,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - _Test file: `tests/properties/test_enrichment_validation_gate.py`_
 
 
-- [ ] 14. Enrichment retry orchestration
+- [x] 14. Enrichment retry orchestration
   - Extend `LLMEnrichmentModule` with `enrich_with_retry(validated_lead_id, lead, idempotency_key, pipeline_run_id, session)` method that wraps `enrich_lead()` in a retry loop
   - On retryable failure: increment `retry_count` in database → sleep with exponential backoff + jitter → call `enrich_lead()` again → repeat up to `RETRY_MAX_ATTEMPTS`
   - On non-retryable failure or max retries exceeded: mark permanently failed and return

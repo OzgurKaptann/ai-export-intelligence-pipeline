@@ -33,6 +33,8 @@ Design notes
 from __future__ import annotations
 
 import json
+import random
+import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional, Union
 from uuid import UUID
@@ -42,7 +44,7 @@ from pydantic import ValidationError
 from src.database.repository import PipelineRepository
 from src.enrichment.mock_llm import MockLLMProvider
 from src.enrichment.prompt_builder import PROMPT_VERSION, build_enrichment_prompt
-from src.enrichment.retry_policy import should_retry
+from src.enrichment.retry_policy import is_retryable, should_retry
 from src.logging_config import get_logger
 from src.validation.enrichment_schemas import EnrichmentOutputSchema
 from src.validation.input_schemas import EnrichmentResult, RawLeadSchema
@@ -92,6 +94,20 @@ class LLMEnrichmentModule:
         while tests inject a fake.
     logger:
         Optional structlog logger; one is created when omitted.
+    max_retries:
+        Optional override for the retry ceiling used by
+        :meth:`enrich_with_retry`.  When ``None`` the value is read lazily from
+        ``settings.RETRY_MAX_ATTEMPTS`` at call time, so tests can pin it
+        without touching the environment.
+    retry_delay_seconds:
+        Optional override for the exponential-backoff base delay.  When
+        ``None`` the value is read lazily from ``settings.RETRY_DELAY_SECONDS``.
+    sleep_func:
+        Callable used to wait between retries; defaults to :func:`time.sleep`.
+        Tests inject a no-op so no real time passes.
+    jitter_func:
+        Callable ``(low, high) -> float`` used for backoff jitter; defaults to
+        :func:`random.uniform`.  Tests inject a deterministic stub.
     """
 
     def __init__(
@@ -100,11 +116,21 @@ class LLMEnrichmentModule:
         provider: Optional[MockLLMProvider] = None,
         repository_factory: RepositoryFactory = PipelineRepository,
         logger=None,
+        max_retries: Optional[int] = None,
+        retry_delay_seconds: Optional[float] = None,
+        sleep_func: Optional[Callable[[float], None]] = None,
+        jitter_func: Optional[Callable[[float, float], float]] = None,
     ) -> None:
         self._settings = settings
         self._provider = provider or MockLLMProvider()
         self._repository_factory = repository_factory
         self._logger = logger or get_logger(__name__)
+        # Retry knobs: stored as overrides so the config-derived defaults stay
+        # lazy (read per call), never at import time.
+        self._max_retries_override = max_retries
+        self._retry_delay_seconds_override = retry_delay_seconds
+        self._sleep_func = sleep_func or time.sleep
+        self._jitter_func = jitter_func or random.uniform
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -117,6 +143,7 @@ class LLMEnrichmentModule:
         idempotency_key: str,
         pipeline_run_id: UUID,
         session,
+        retry_count: int = 0,
     ) -> EnrichmentResult:
         """Enrich a single validated lead and persist the outcome.
 
@@ -125,6 +152,11 @@ class LLMEnrichmentModule:
         otherwise.  The matching :class:`Enrichment` row is always written
         through the injected repository, and ``should_retry`` reflects the
         retry policy for the recorded status.
+
+        ``retry_count`` records how many retries preceded this attempt; it is
+        ``0`` for a standalone call and is supplied by :meth:`enrich_with_retry`
+        when the same attempt is replayed.  It is persisted on the enrichment
+        row and surfaced on the result for auditing.
         """
         # Session is injected; the repository is the only DB entry point and is
         # never created from a self-opened session.
@@ -151,6 +183,7 @@ class LLMEnrichmentModule:
                 status=exc.status,
                 message=str(exc),
                 raw_response=exc.raw_response,
+                retry_count=retry_count,
             )
         except NotImplementedError:
             # An unimplemented real path is a programmer error, not a runtime
@@ -170,6 +203,7 @@ class LLMEnrichmentModule:
                 status="unknown_error",
                 message=str(exc),
                 raw_response=None,
+                retry_count=retry_count,
             )
 
         return self._record_success(
@@ -178,7 +212,87 @@ class LLMEnrichmentModule:
             pipeline_run_id=pipeline_run_id,
             output=output,
             raw_response=raw_text,
+            retry_count=retry_count,
         )
+
+    def enrich_with_retry(
+        self,
+        validated_lead_id: UUID,
+        lead: Union[RawLeadSchema, dict],
+        idempotency_key: str,
+        pipeline_run_id: UUID,
+        session,
+    ) -> EnrichmentResult:
+        """Enrich a lead, retrying only transient failures with backoff.
+
+        Wraps :meth:`enrich_lead` in a retry loop governed entirely by the
+        shared retry policy (:func:`is_retryable` / :func:`should_retry`):
+
+        * The initial attempt always runs.
+        * Each retryable failure (``timeout``, ``network_error``,
+          ``rate_limited``) increments ``retry_count``; every other status —
+          success, non-retryable failures and anything outside the taxonomy —
+          stops the loop immediately.
+        * Before each retry the loop waits ``retry_delay_seconds *
+          (2 ** retry_count) + jitter`` seconds via the injected ``sleep_func``
+          and ``jitter_func``; no sleep happens after the final attempt.
+        * The loop stops as soon as ``should_retry`` says so, so ``retry_count``
+          never drives a call past ``max_retries`` (and a non-positive
+          ``max_retries`` means no retries at all).
+
+        The reused session is passed straight through to :meth:`enrich_lead`;
+        no new session is ever created, and persistence stays the
+        responsibility of ``enrich_lead`` (one row per attempt, no
+        double-writes here).  The returned :class:`EnrichmentResult` carries the
+        final status and the total number of retryable failures observed.
+        """
+        max_retries = self._max_retries
+
+        retry_count = 0
+        result = self.enrich_lead(
+            validated_lead_id=validated_lead_id,
+            lead=lead,
+            idempotency_key=idempotency_key,
+            pipeline_run_id=pipeline_run_id,
+            session=session,
+            retry_count=retry_count,
+        )
+
+        while is_retryable(result.enrichment_status):
+            retry_count += 1
+            if not should_retry(
+                result.enrichment_status,
+                retry_count=retry_count,
+                max_retries=max_retries,
+            ):
+                # Ceiling reached (or retries disabled) — stop without sleeping.
+                break
+
+            delay = self._retry_delay_seconds * (2 ** retry_count) + self._jitter_func(0.0, 1.0)
+            self._logger.info(
+                "enrichment_retry",
+                enrichment_status=result.enrichment_status,
+                retry_count=retry_count,
+                max_retries=max_retries,
+                validated_lead_id=str(validated_lead_id),
+                pipeline_run_id=str(pipeline_run_id),
+            )
+            self._sleep_func(delay)
+
+            result = self.enrich_lead(
+                validated_lead_id=validated_lead_id,
+                lead=lead,
+                idempotency_key=idempotency_key,
+                pipeline_run_id=pipeline_run_id,
+                session=session,
+                retry_count=retry_count,
+            )
+
+        # Surface the total retryable-failure count; the orchestration loop has
+        # exhausted its own retries, so no further retry is expected upstream.
+        result.retry_count = retry_count
+        result.should_retry = False
+        return result
 
     # ------------------------------------------------------------------ #
     # Provider selection
@@ -287,6 +401,7 @@ class LLMEnrichmentModule:
         pipeline_run_id: UUID,
         output: EnrichmentOutputSchema,
         raw_response: Optional[str],
+        retry_count: int = 0,
     ) -> EnrichmentResult:
         """Insert a successful enrichment row and build the result."""
         enrichment_data = {
@@ -298,7 +413,7 @@ class LLMEnrichmentModule:
             "risk_assessment": output.risk_assessment.model_dump(),
             "recommended_markets": list(output.recommended_markets),
             "confidence_score": output.confidence_score,
-            "retry_count": 0,
+            "retry_count": retry_count,
             "raw_llm_response": raw_response,
             "prompt_version": PROMPT_VERSION,
             "model_name": self._model_name,
@@ -315,7 +430,7 @@ class LLMEnrichmentModule:
             enrichment_id=_coerce_uuid(enrichment_id),
             should_retry=False,
             error_message=None,
-            retry_count=0,
+            retry_count=retry_count,
         )
 
     def _record_failure(
@@ -327,12 +442,13 @@ class LLMEnrichmentModule:
         status: str,
         message: str,
         raw_response: Optional[str],
+        retry_count: int = 0,
     ) -> EnrichmentResult:
         """Insert a failure enrichment row and build the result.
 
-        ``retry_count`` is ``0`` for a fresh attempt; the retry orchestration
-        loop (a later task) increments it.  ``should_retry`` is derived from
-        the shared retry policy and the configured maximum.
+        ``retry_count`` is ``0`` for a fresh attempt and is supplied by
+        :meth:`enrich_with_retry` when an attempt is replayed.  ``should_retry``
+        is derived from the shared retry policy and the configured maximum.
         """
         enrichment_data = {
             "validated_lead_id": str(validated_lead_id),
@@ -341,7 +457,7 @@ class LLMEnrichmentModule:
             "error_type": status,
             "error_message": message,
             "failed_at": datetime.now(timezone.utc),
-            "retry_count": 0,
+            "retry_count": retry_count,
             "raw_llm_response": raw_response,
             "prompt_version": PROMPT_VERSION,
             "model_name": self._model_name,
@@ -349,7 +465,7 @@ class LLMEnrichmentModule:
         enrichment_id = repository.insert_enrichment(enrichment_data)
         retry = should_retry(
             status,
-            retry_count=0,
+            retry_count=retry_count,
             max_retries=self._max_retries,
         )
         return EnrichmentResult(
@@ -357,7 +473,7 @@ class LLMEnrichmentModule:
             enrichment_id=_coerce_uuid(enrichment_id),
             should_retry=retry,
             error_message=message,
-            retry_count=0,
+            retry_count=retry_count,
         )
 
     # ------------------------------------------------------------------ #
@@ -373,8 +489,17 @@ class LLMEnrichmentModule:
 
     @property
     def _max_retries(self) -> int:
-        """Configured retry ceiling, defaulting to 0 when unset."""
+        """Retry ceiling: constructor override, else config, else 0."""
+        if self._max_retries_override is not None:
+            return int(self._max_retries_override)
         return int(getattr(self._settings, "RETRY_MAX_ATTEMPTS", 0) or 0)
+
+    @property
+    def _retry_delay_seconds(self) -> float:
+        """Backoff base delay: constructor override, else config, else 0.0."""
+        if self._retry_delay_seconds_override is not None:
+            return float(self._retry_delay_seconds_override)
+        return float(getattr(self._settings, "RETRY_DELAY_SECONDS", 0.0) or 0.0)
 
 
 def _coerce_uuid(value: Any) -> Optional[UUID]:

@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier and the LLM enrichment module with validation gate completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier and the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate) are implemented; real OpenAI enrichment (boundary only so far), retry orchestration, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate and the enrichment retry orchestration loop completed.  
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate) and the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy) are implemented; real OpenAI enrichment (boundary only so far), scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
@@ -53,13 +53,13 @@ Completed so far:
 - Enrichment prompt builder (`build_enrichment_prompt`; deterministic, offline prompt text including lead fields and the `EnrichmentOutputSchema` JSON output contract)
 - Retry policy classifier (`is_retryable`, `should_retry`; pure, deterministic classification of the 9-value enrichment failure taxonomy — `timeout`, `network_error` and `rate_limited` are retryable, all others are not)
 - LLM enrichment module with validation gate (`LLMEnrichmentModule.enrich_lead`; selects the mock provider when `MOCK_LLM_ENABLED=true`, validates every output with `EnrichmentOutputSchema`, persists success or failure metadata through the injected repository, and maps failures onto the enrichment status taxonomy — `success`, `validation_failed`, `empty_response`, `invalid_json`, `unknown_error`; the real OpenAI call is an isolated, monkeypatch-ready boundary, not yet production-wired)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier and the LLM enrichment module
-- **265 passing unit tests**
+- Enrichment retry orchestration (`LLMEnrichmentModule.enrich_with_retry`; wraps `enrich_lead` in a retry loop that retries only the transient statuses — `timeout`, `network_error`, `rate_limited` — using the shared retry policy, waits `RETRY_DELAY_SECONDS * (2 ** retry_count) + jitter` between attempts, stops at `RETRY_MAX_ATTEMPTS`, reuses the injected session and never opens its own; sleep/backoff are injectable for keyless, delay-free testing)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier, the LLM enrichment module and the enrichment retry orchestration
+- **285 passing unit tests**
 
 Planned next:
 
 - Real OpenAI enrichment integration (production wiring)
-- Enrichment retry orchestration loop
 - Lead scoring module
 - Pipeline orchestrator
 - FastAPI endpoints
@@ -367,12 +367,13 @@ Current unit test coverage includes:
 - mock LLM provider behavior,
 - enrichment prompt builder behavior,
 - retry policy classifier behavior,
-- LLM enrichment module behavior (validation gate and failure taxonomy mapping).
+- LLM enrichment module behavior (validation gate and failure taxonomy mapping),
+- enrichment retry orchestration behavior (retryable vs non-retryable handling, retry-count ceiling, exponential backoff with jitter, injected session reuse).
 
 Latest local result:
 
 ```text
-265 passed
+285 passed
 ```
 
 ---
@@ -437,7 +438,7 @@ LOG_LEVEL=INFO
 - LLM enrichment module with validation gate (mock mode) — **implemented**
 - Structured JSON response validation — **implemented**
 - Real LLM integration (production wiring; boundary in place)
-- Retry handling (orchestration loop)
+- Retry handling (orchestration loop) — **implemented**
 - Prompt and model traceability — **implemented**
 
 ### Lead Scoring
@@ -489,11 +490,12 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - enrichment prompt builder (`build_enrichment_prompt`; deterministik, çevrimdışı prompt metni; lead alanları ve `EnrichmentOutputSchema` JSON çıktı sözleşmesi dahil),
 - retry policy sınıflandırıcısı (`is_retryable`, `should_retry`; saf ve deterministik; 9 değerli enrichment hata taksonomisini sınıflandırır — `timeout`, `network_error` ve `rate_limited` yeniden denenebilir, diğerleri denenmez),
 - doğrulama kapılı LLM enrichment modülü (`LLMEnrichmentModule.enrich_lead`; `MOCK_LLM_ENABLED=true` iken mock sağlayıcıyı seçer, her çıktıyı `EnrichmentOutputSchema` ile doğrular, başarı veya hata bilgisini enjekte edilen repository üzerinden saklar ve hataları enrichment durum taksonomisine eşler — `success`, `validation_failed`, `empty_response`, `invalid_json`, `unknown_error`; gerçek OpenAI çağrısı ise izole ve monkeypatch ile test edilebilir bir sınır olup henüz üretim için bağlanmamıştır),
+- enrichment retry orkestrasyonu (`LLMEnrichmentModule.enrich_with_retry`; `enrich_lead` çağrısını bir retry döngüsüne sarar, yalnızca geçici hataları yeniden dener — `timeout`, `network_error`, `rate_limited` — paylaşılan retry policy’yi kullanır, denemeler arasında `RETRY_DELAY_SECONDS * (2 ** retry_count) + jitter` kadar bekler, `RETRY_MAX_ATTEMPTS` sınırında durur, enjekte edilen session’ı yeniden kullanır ve kendi session’ını açmaz; sleep/backoff davranışı anahtar gerektirmeyen ve gecikmesiz testler için enjekte edilebilir),
 - unit testler.
 
-Toplam **265 unit test** başarıyla geçmektedir.
+Toplam **285 unit test** başarıyla geçmektedir.
 
-Gelecek aşamalarda gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), retry orkestrasyonu (retry döngüsü), lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
+Gelecek aşamalarda gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
