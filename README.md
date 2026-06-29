@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider and the enrichment prompt builder completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider and the prompt builder are implemented; real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder and the retry policy classifier completed.  
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder and the retry policy classifier are implemented; real LLM enrichment, scoring, FastAPI, Streamlit dashboard and Docker features are planned for upcoming iterations.
 
 ---
 
@@ -51,12 +51,12 @@ Completed so far:
 - Structured logging setup with `structlog` (`configure_logging`, `get_logger`, `bind_pipeline_context`; console or JSON output)
 - Deterministic mock LLM provider (`MockLLMProvider.enrich_lead`; schema-valid synthetic enrichment, no API key, no network, no database)
 - Enrichment prompt builder (`build_enrichment_prompt`; deterministic, offline prompt text including lead fields and the `EnrichmentOutputSchema` JSON output contract)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider and the prompt builder
-- **199 passing unit tests**
+- Retry policy classifier (`is_retryable`, `should_retry`; pure, deterministic classification of the 9-value enrichment failure taxonomy — `timeout`, `network_error` and `rate_limited` are retryable, all others are not)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder and the retry policy classifier
+- **250 passing unit tests**
 
 Planned next:
 
-- Retry policy
 - LLM response validation gate
 - Lead scoring module
 - Pipeline orchestrator
@@ -363,12 +363,13 @@ Current unit test coverage includes:
 - CSV ingestion behavior,
 - structured logging setup,
 - mock LLM provider behavior,
-- enrichment prompt builder behavior.
+- enrichment prompt builder behavior,
+- retry policy classifier behavior.
 
 Latest local result:
 
 ```text
-199 passed
+250 passed
 ```
 
 ---
@@ -428,10 +429,11 @@ LOG_LEVEL=INFO
 
 - Deterministic mock LLM mode — **implemented**
 - Enrichment prompt builder — **implemented**
+- Retry policy classifier — **implemented**
+- Enrichment failure taxonomy classification — **implemented**
 - Real LLM integration
 - Structured JSON response validation
-- Retry handling
-- Enrichment failure taxonomy
+- Retry handling (orchestration loop)
 - Prompt and model traceability
 
 ### Lead Scoring
@@ -481,11 +483,12 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - yapılandırılmış loglama (`structlog`),
 - deterministik mock LLM sağlayıcısı,
 - enrichment prompt builder (`build_enrichment_prompt`; deterministik, çevrimdışı prompt metni; lead alanları ve `EnrichmentOutputSchema` JSON çıktı sözleşmesi dahil),
+- retry policy sınıflandırıcısı (`is_retryable`, `should_retry`; saf ve deterministik; 9 değerli enrichment hata taksonomisini sınıflandırır — `timeout`, `network_error` ve `rate_limited` yeniden denenebilir, diğerleri denenmez),
 - unit testler.
 
-Toplam **199 unit test** başarıyla geçmektedir.
+Toplam **250 unit test** başarıyla geçmektedir.
 
-Gelecek aşamalarda gerçek LLM enrichment, retry yönetimi, lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
+Gelecek aşamalarda gerçek LLM enrichment, retry orkestrasyonu (retry döngüsü), lead scoring, FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve entegrasyon testleri eklenecektir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
