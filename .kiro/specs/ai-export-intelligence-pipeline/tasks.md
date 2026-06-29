@@ -210,7 +210,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `KnowledgeBaseModule().retrieve_context("electronics", "EU")` returns `None`; `is_enabled` reads config
   - **Suggested commit:** `feat(kb): add knowledge base stub returning None`
 
-- [ ] 17. Pipeline orchestrator and pipeline_run tracking
+- [x] 17. Pipeline orchestrator and pipeline_run tracking
   - Implement `src/pipeline/orchestrator.py` with `PipelineOrchestrator` class and `run(file_path: Path) -> PipelineRunResult`
   - Generate `pipeline_run_id` UUID → create `pipeline_runs` record (status=`in_progress`, started_at=now)
   - Call `CSVIngestionModule.ingest_file()`
