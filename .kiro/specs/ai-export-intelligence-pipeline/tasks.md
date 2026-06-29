@@ -200,7 +200,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - Use hypothesis to generate 100 random `EnrichmentOutputSchema` instances (including edge values 0.0 and 1.0) → calculate score → assert `0 <= score <= 100`
   - _Test file: `tests/properties/test_score_range.py`_
 
-- [ ] 16. Knowledge base module (stub)
+- [x] 16. Knowledge base module (stub)
   - Implement `src/knowledge_base/kb_module.py` with `KnowledgeBaseModule` class
   - Method `retrieve_context(product_category: str, target_market: str) -> Optional[str]` always returns `None` (stub implementation for now)
   - Property `is_enabled` reads `KB_ENABLED` from config
