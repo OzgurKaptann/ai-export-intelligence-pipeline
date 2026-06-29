@@ -225,7 +225,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `feat(pipeline): add orchestrator with full run lifecycle tracking`
 
 
-- [ ] 18. Data quality report generation
+- [x] 18. Data quality report generation
   - Extend `PipelineOrchestrator` to call `generate_data_quality_report(pipeline_run_id, session)` after pipeline completes
   - Implement report generation in `src/pipeline/data_quality.py` with `generate_report()` function
   - Query counts from `raw_leads`, `validated_leads`, `enrichments`, `scored_leads` for the given `pipeline_run_id`
