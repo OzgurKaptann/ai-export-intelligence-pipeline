@@ -21,6 +21,8 @@
 # schema from migrations/001_initial_schema.sql, and only ever truncates a
 # database whose URL names a test/smoke/ci target (here: ai_export_smoke).
 # =============================================================================
+name: ai-export-test
+
 services:
   db:
     image: postgres:15
