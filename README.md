@@ -6,7 +6,7 @@ This project is being developed as a production-oriented data pipeline, not just
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
 > **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate, the enrichment retry orchestration loop, the lead scoring module, the knowledge base stub, the pipeline orchestrator (with `pipeline_run` lifecycle tracking), data quality report generation, the FastAPI application scaffold (`/health` endpoint, `get_db` dependency, local CORS), the FastAPI leads routes (scored lead list / detail / filter) and the FastAPI pipeline run and quality report routes (`/pipeline-runs` list, `/pipeline-runs/{run_id}/report`) completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`), the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`), unit-testable data quality report generation (`generate_report`; counts each stage's rows for a run and stores one `data_quality_reports` row), the FastAPI application scaffold (`src.api.main:app` with an async `lifespan`, a deterministic `GET /health` returning `{"status": "ok"}`, the re-exported `get_db` session dependency and local-development CORS — no settings load, session or database connection at import time), the FastAPI leads routes (`GET /leads` with optional `min_score`, `GET /leads/filter`, `GET /leads/{lead_id}` with 404 handling, returning `ScoredLeadResponse` models) and the FastAPI pipeline run and quality report routes (`GET /pipeline-runs` listing runs newest-first as `PipelineRunResponse`, `GET /pipeline-runs/{run_id}/report` returning the run's `DataQualityReportResponse` with a 404 when missing), the synthetic sample data generator (`data/sample/generate_sample_data.py` plus the committed `data/sample/leads.csv` with 20 fictional records), the full-pipeline mock-LLM smoke test (Task 23 — `tests/smoke/test_pipeline_smoke.py`, run end-to-end against a local PostgreSQL via `SMOKE_TEST_DATABASE_URL` and skipped when it is unset) and the Streamlit dashboard (Task 24 — `dashboard/app.py` with Overview / Lead List / Lead Detail / Pipeline Runs pages that read `API_BASE_URL` and call the existing FastAPI endpoints over HTTP) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far) and Docker / Docker Compose (Task 25) are planned for upcoming iterations.
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`), the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`), unit-testable data quality report generation (`generate_report`; counts each stage's rows for a run and stores one `data_quality_reports` row), the FastAPI application scaffold (`src.api.main:app` with an async `lifespan`, a deterministic `GET /health` returning `{"status": "ok"}`, the re-exported `get_db` session dependency and local-development CORS — no settings load, session or database connection at import time), the FastAPI leads routes (`GET /leads` with optional `min_score`, `GET /leads/filter`, `GET /leads/{lead_id}` with 404 handling, returning `ScoredLeadResponse` models) and the FastAPI pipeline run and quality report routes (`GET /pipeline-runs` listing runs newest-first as `PipelineRunResponse`, `GET /pipeline-runs/{run_id}/report` returning the run's `DataQualityReportResponse` with a 404 when missing), the synthetic sample data generator (`data/sample/generate_sample_data.py` plus the committed `data/sample/leads.csv` with 20 fictional records), the full-pipeline mock-LLM smoke test (Task 23 — `tests/smoke/test_pipeline_smoke.py`, run end-to-end against a local PostgreSQL via `SMOKE_TEST_DATABASE_URL` and skipped when it is unset) and the Streamlit dashboard (Task 24 — `dashboard/app.py` with Overview / Lead List / Lead Detail / Pipeline Runs pages that read `API_BASE_URL` and call the existing FastAPI endpoints over HTTP) and the Docker / Docker Compose setup (Task 25 — `Dockerfile`, `Dockerfile.dashboard`, `docker-compose.yml` and `docker-compose.test.yml`) are implemented; real knowledge base retrieval (RAG / vector search) and real OpenAI enrichment (boundary only so far) remain planned for upcoming iterations.
 
 ---
 
@@ -66,13 +66,13 @@ Completed so far:
 - Full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`; runs `PipelineOrchestrator` end-to-end against `data/sample/leads.csv` on a local PostgreSQL with `MOCK_LLM_ENABLED=true`, applies the existing migration, truncates only the known project tables, and verifies one `completed` `pipeline_runs` row, the populated `raw_leads` / `validated_leads` / `enrichments` (all `success`) / `scored_leads` and one `data_quality_reports` row; requires `SMOKE_TEST_DATABASE_URL` — and a database whose name contains `test` / `smoke` / `ci` before it will truncate — and is skipped when that variable is unset, so it never needs Docker, the network or a real OpenAI key)
 - Skip-mode duplicate handling in CSV ingestion (a validated row whose business identity / idempotency key was already ingested is counted as `skipped` instead of crashing on the `raw_leads.idempotency_key` unique constraint)
 - Streamlit dashboard (`dashboard/app.py`; four `st.sidebar`-navigated pages — Overview (total leads, average score, score-distribution `st.bar_chart`), Lead List (a 0–100 score slider that filters `GET /leads?min_score=` into an `st.dataframe`), Lead Detail (select a lead, fetch `GET /leads/{lead_id}` and show it with `st.json`) and Pipeline Runs (`GET /pipeline-runs` plus best-effort per-run `GET /pipeline-runs/{run_id}/report` quality reports) — reads the API base URL from `API_BASE_URL` (default `http://localhost:8000`), calls the existing FastAPI endpoints with `requests` and a timeout, makes no API call at import time, and shows a friendly message instead of a stack trace when the API is unreachable)
-- **411 passing unit tests**
+- Docker / Docker Compose setup (Task 25 — `Dockerfile` builds the FastAPI app image that runs the migration then `uvicorn` on port 8000, `Dockerfile.dashboard` builds the Streamlit image on port 8501, `docker-compose.yml` wires `db` (postgres:15 with a `pgdata` volume and a `pg_isready` healthcheck), `app` and `dashboard` together with all env vars — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, an empty `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — and no baked-in secrets, and `docker-compose.test.yml` runs the unit + smoke suites against a dedicated `ai_export_smoke` database; `docker compose up --build` brings the stack up with `GET /health` returning `{"status": "ok"}` and the dashboard at `http://localhost:8501`)
+- **411 passing unit tests** (412 including the smoke test, which the test compose runs against a containerised PostgreSQL)
 
 Planned next:
 
 - Real knowledge base retrieval (RAG / vector search)
-- Real OpenAI enrichment integration (production wiring)
-- Docker / Docker Compose setup (Task 25)
+- Real OpenAI enrichment integration (production wiring, Task 26)
 - PostgreSQL integration tests
 
 ---
@@ -314,7 +314,7 @@ Current completed commits include:
 | API | FastAPI (`/health` + scored lead routes + pipeline run / quality report routes) |
 | Dashboard | Streamlit (4-page read-only dashboard over the API) |
 | AI Enrichment | OpenAI / Mock LLM planned |
-| Containerization | Docker Compose planned |
+| Containerization | Docker + Docker Compose (app, db, dashboard, test) |
 
 ---
 
@@ -413,6 +413,46 @@ streamlit run dashboard/app.py
 The dashboard has four pages (Overview, Lead List, Lead Detail, Pipeline Runs)
 in the sidebar. If the API is not running it shows a friendly message rather
 than crashing.
+
+---
+
+## Run with Docker (Task 25)
+
+The whole stack — PostgreSQL, the FastAPI app and the Streamlit dashboard —
+runs with Docker Compose. No `.env` file, no OpenAI key and no network are
+required: the app runs in mock-LLM mode (`MOCK_LLM_ENABLED=true`) with an empty
+`OPENAI_API_KEY`, and all configuration is wired through `environment:` in the
+compose files (no secrets are baked into the images).
+
+```powershell
+# Build the images and start db + app + dashboard
+docker compose up --build
+
+# In another terminal: check service status and the health endpoint
+docker compose ps
+Invoke-RestMethod http://localhost:8000/health   # -> status: ok
+
+# Open the dashboard
+#   http://localhost:8501
+
+# Tear everything down (and remove the postgres volume)
+docker compose down -v
+```
+
+On startup the `app` container runs `migrations/run_migrations.py` and then
+`uvicorn`, so the schema is created automatically. The `db` service uses a
+`pg_isready` healthcheck and the `app` service a `/health` healthcheck, so
+`docker compose ps` reports them as `healthy`.
+
+### Tests in Docker
+
+`docker-compose.test.yml` brings up a dedicated `ai_export_smoke` PostgreSQL
+and runs the unit suite plus the full-pipeline smoke test inside a container:
+
+```powershell
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
+docker compose -f docker-compose.test.yml down -v
+```
 
 ---
 
@@ -524,7 +564,7 @@ LOG_LEVEL=INFO
 - Structured logs — **implemented**
 - Synthetic sample data (generator script + `data/sample/leads.csv`) — **implemented**
 - Full-pipeline mock-LLM smoke test (Task 23, requires local PostgreSQL via `SMOKE_TEST_DATABASE_URL`) — **implemented**
-- Docker / Docker Compose (Task 25)
+- Docker / Docker Compose (Task 25 — app, db, dashboard and a test stack) — **implemented**
 - PostgreSQL integration tests
 - README demo flow
 
@@ -567,7 +607,7 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 
 Toplam **411 unit test** başarıyla geçmektedir.
 
-Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose (Task 25) ise sonraki iterasyon için planlanmaktadır. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı) ve PostgreSQL entegrasyon testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
+Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose kurulumu (Task 25) uygulanmıştır: `Dockerfile` (migration'ı çalıştırıp ardından 8000 portunda `uvicorn` başlatan FastAPI uygulama imajı), `Dockerfile.dashboard` (8501 portunda Streamlit imajı), `docker-compose.yml` (`db` → `pgdata` volume ve `pg_isready` healthcheck ile postgres:15, `app` ve `dashboard` servislerini tüm ortam değişkenleriyle — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, boş `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — birbirine bağlar; imajlara hiçbir gizli anahtar gömülmez) ve `docker-compose.test.yml` (ayrı bir `ai_export_smoke` veritabanına karşı unit + smoke testlerini çalıştırır) dosyalarını içerir. `docker compose up --build` komutu tüm yığını ayağa kaldırır; `GET http://localhost:8000/health` `{"status": "ok"}` döner ve dashboard `http://localhost:8501` adresinde açılır (`docker compose down -v` ile kapatılır). Docker, ağ erişimi veya gerçek bir OpenAI anahtarı gerektirmez (mock LLM modu). Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı, Task 26) ve PostgreSQL entegrasyon testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
@@ -577,4 +617,4 @@ Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine 
 
 This repository is under active development.  
 The current version covers the data layer, per-lead processing and end-to-end orchestration: schema design, validation, database modeling, repository behavior, CSV ingestion, structured logging, mock-mode LLM enrichment with a validation gate, retry orchestration, lead scoring, the pipeline orchestrator with `pipeline_run` lifecycle tracking and data quality report generation.  
-A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator and data quality report generation are unit-testable with fake dependencies. A full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`) verifies the end-to-end flow against a local PostgreSQL database when `SMOKE_TEST_DATABASE_URL` is set, and is skipped otherwise. The Streamlit dashboard (`dashboard/app.py`, Task 24) reads `API_BASE_URL` and renders four read-only pages over the existing FastAPI endpoints; Docker remains planned for Task 25. Upcoming iterations will add real knowledge base retrieval (RAG / vector search), production OpenAI wiring, Docker/deployment, and PostgreSQL integration tests.
+A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator and data quality report generation are unit-testable with fake dependencies. A full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`) verifies the end-to-end flow against a local PostgreSQL database when `SMOKE_TEST_DATABASE_URL` is set, and is skipped otherwise. The Streamlit dashboard (`dashboard/app.py`, Task 24) reads `API_BASE_URL` and renders four read-only pages over the existing FastAPI endpoints. The full stack is containerised (Task 25): `docker compose up --build` starts PostgreSQL, the FastAPI app (which runs migrations then `uvicorn`) and the Streamlit dashboard, and `docker-compose.test.yml` runs the unit + smoke suites against a containerised database. Upcoming iterations will add real knowledge base retrieval (RAG / vector search), production OpenAI wiring (Task 26), and PostgreSQL integration tests.

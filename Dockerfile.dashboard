@@ -1,0 +1,29 @@
+# =============================================================================
+# Dockerfile.dashboard — Streamlit dashboard container (Task 25)
+#
+# Builds the read-only dashboard image. The dashboard only needs `streamlit` and
+# `requests` (both pinned in requirements.txt); it talks to the API over HTTP and
+# never touches the database directly.
+#
+# The API base URL is supplied at runtime through the API_BASE_URL environment
+# variable (set in docker-compose) — it is intentionally NOT hardcoded here.
+# =============================================================================
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Install dependencies first for layer caching.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy only the dashboard code.
+COPY dashboard/ ./dashboard/
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "dashboard/app.py", \
+     "--server.address=0.0.0.0", "--server.port=8501"]

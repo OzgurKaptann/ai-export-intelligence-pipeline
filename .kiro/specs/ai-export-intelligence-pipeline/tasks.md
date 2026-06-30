@@ -315,7 +315,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** All 4 pages load; score filter updates lead list dynamically; API error shows user-friendly message
   - **Suggested commit:** `feat(dashboard): add streamlit dashboard with 4 pages`
 
-- [ ] 25. Dockerfile and Docker Compose setup
+- [x] 25. Dockerfile and Docker Compose setup
   - Create `Dockerfile` for the Python app container: `python:3.11-slim` base, install requirements.txt, copy `src/`, `migrations/`, `data/` directories, expose port 8000, run migrations then start uvicorn
   - Create `Dockerfile.dashboard` for the Streamlit container: install dashboard requirements, expose port 8501, `CMD ["streamlit", "run", "dashboard/app.py"]`
   - Create `docker-compose.yml` matching the design spec: `app` (port 8000), `db` (postgres:15, pgdata volume), `dashboard` (port 8501, depends_on app)

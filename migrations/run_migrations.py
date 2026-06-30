@@ -29,20 +29,41 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+def _normalize_for_psycopg2(url: str) -> str:
+    """
+    Strip a SQLAlchemy driver suffix from the URL scheme for libpq/psycopg2.
+
+    SQLAlchemy URLs use ``postgresql+psycopg2://...`` but ``psycopg2.connect``
+    (libpq) only understands ``postgresql://`` / ``postgres://``.  Drop the
+    ``+driver`` part so the same DATABASE_URL works for both SQLAlchemy (the
+    app) and psycopg2 (this migration script).  Plain URLs pass through
+    unchanged.
+    """
+    for prefix in ("postgresql+", "postgres+"):
+        if url.startswith(prefix):
+            base, _, rest = url[len(prefix):].partition("://")
+            # ``base`` is the driver name (e.g. "psycopg2"); discard it.
+            return f"{prefix[:-1]}://{rest}"
+    return url
+
+
 def _get_database_url() -> str:
     """
     Resolve DATABASE_URL from the environment.
 
     1. Try the raw environment variable first (works in Docker / CI).
     2. Fall back to src.config.Settings, which also reads .env.
+
+    The resolved URL is normalized for psycopg2 (any ``+driver`` suffix in the
+    scheme is removed).
     """
     url = os.environ.get("DATABASE_URL")
     if url:
-        return url
+        return _normalize_for_psycopg2(url)
 
     try:
         from src.config import Settings
-        return Settings().DATABASE_URL
+        return _normalize_for_psycopg2(Settings().DATABASE_URL)
     except Exception as exc:
         print(
             f"[migrations] ERROR: could not resolve DATABASE_URL.\n"
