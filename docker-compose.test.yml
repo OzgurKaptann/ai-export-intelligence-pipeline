@@ -3,7 +3,8 @@
 #
 #   db   — PostgreSQL 15 on a dedicated `ai_export_smoke` database (ephemeral;
 #          no named volume so each run starts clean)
-#   test — runs the unit suite plus the full-pipeline smoke test against `db`
+#   test — runs the unit suite, the full-pipeline smoke test, and the
+#          PostgreSQL integration test suite (Task 27) against `db`
 #
 # Run with:
 #   docker compose -f docker-compose.test.yml up --build \
@@ -48,4 +49,4 @@ services:
     # Bind-mount the repo so tests/ (not copied into the app image) is available.
     volumes:
       - .:/app
-    command: python -m pytest tests/unit/ tests/smoke/ -v
+    command: python -m pytest tests/unit/ tests/smoke/ tests/integration/ -v

@@ -341,7 +341,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** With `MOCK_LLM_ENABLED=false` and valid API key, `enrich_lead()` calls real API; enrichment record has `model_name="gpt-4o-mini"` (or actual model used)
   - **Suggested commit:** `feat(enrichment): add real llm provider with openai sdk`
 
-- [ ]* 27. Integration test suite
+- [x] 27. Integration test suite
   - Write comprehensive integration tests in `tests/integration/`:
     - `test_csv_ingestion_integration.py` — full ingestion flow with idempotency modes (skip, update, reprocess)
     - `test_enrichment_pipeline_integration.py` — full pipeline with mock LLM, verify all tables populated
