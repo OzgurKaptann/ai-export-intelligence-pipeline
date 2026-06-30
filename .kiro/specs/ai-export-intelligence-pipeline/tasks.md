@@ -328,7 +328,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `feat(docker): add dockerfile and docker-compose for app, db, and dashboard`
 
 
-- [ ] 26. Real LLM integration (optional, late-stage)
+- [x] 26. Real LLM integration (optional, late-stage)
   - Extend `LLMEnrichmentModule` to add `RealLLMProvider` class using `openai.OpenAI()` client
   - Method `generate(lead: RawLeadSchema, prompt: str) -> str` calls `client.chat.completions.create()` with structured output (use `response_format={"type": "json_object"}`)
   - Read `OPENAI_API_KEY` and `OPENAI_MODEL` from config
