@@ -370,7 +370,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** All properties pass with 100 iterations; no hypothesis health check failures
   - **Suggested commit:** `test: add property-based tests with hypothesis`
 
-- [ ] 29. README, architecture notes, and demo instructions
+- [x] 29. README, architecture notes, and demo instructions
   - Write comprehensive `README.md` with sections: Project Purpose, Tech Stack, Architecture Overview, Setup Instructions, Running the Pipeline, Running Tests, API Documentation, Sample Output, Technology Choices, Future Enhancements
   - Include architecture diagrams (copy from design.md)
   - Add "Getting Started in 3 Minutes" section: `docker-compose up -d → docker exec -it app python -m src.pipeline.run_pipeline data/sample/leads.csv → open http://localhost:8501`
