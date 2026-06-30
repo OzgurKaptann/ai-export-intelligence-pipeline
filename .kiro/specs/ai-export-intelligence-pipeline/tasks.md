@@ -355,7 +355,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** All integration tests pass; no dangling transactions or test data
   - **Suggested commit:** `test: add comprehensive integration test suite`
 
-- [ ]* 28. Property-based test suite
+- [x] 28. Property-based test suite
   - Write remaining property tests in `tests/properties/`:
     - `test_csv_record_count.py` — Property 1: CSV record count preservation
     - `test_required_field_enforcement.py` — Property 3: Required field enforcement

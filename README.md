@@ -390,6 +390,14 @@ Latest local result:
 435 passed
 ```
 
+A Hypothesis property-based test suite (Task 28) now lives in `tests/properties/`
+and runs alongside the unit suite — six properties, each exercised with 100
+generated examples, fully offline (no PostgreSQL, network or OpenAI key):
+
+```bash
+python -m pytest tests/properties/ -v --hypothesis-show-statistics
+```
+
 The full-pipeline smoke test (`tests/smoke/test_pipeline_smoke.py`) lives outside the unit suite and is **skipped** unless `SMOKE_TEST_DATABASE_URL` points at a local PostgreSQL database.
 
 ---
@@ -447,8 +455,9 @@ On startup the `app` container runs `migrations/run_migrations.py` and then
 ### Tests in Docker
 
 `docker-compose.test.yml` brings up a dedicated `ai_export_smoke` PostgreSQL
-and runs the unit suite, the full-pipeline smoke test and the PostgreSQL
-integration test suite (Task 27) inside a container:
+and runs the unit suite, the Hypothesis property-based suite (Task 28), the
+full-pipeline smoke test and the PostgreSQL integration test suite (Task 27)
+inside a container:
 
 ```powershell
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
@@ -475,6 +484,20 @@ Run a specific test file:
 
 ```bash
 python -m pytest tests/unit/test_repository.py -v
+```
+
+### Property-based test suite (Task 28)
+
+Property-based tests live in `tests/properties/` and use
+[Hypothesis](https://hypothesis.readthedocs.io/) with **100 examples per
+property** (`@settings(max_examples=100)`). They run fast and fully offline —
+no PostgreSQL, no network and no OpenAI key — covering CSV record-count
+preservation, required-field enforcement, validation-error field attribution,
+the enrichment status taxonomy, the retry-count ceiling and idempotency-key
+determinism.
+
+```bash
+python -m pytest tests/properties/ -v --hypothesis-show-statistics
 ```
 
 ### Full-pipeline smoke test (optional, requires PostgreSQL)
@@ -608,6 +631,7 @@ LOG_LEVEL=INFO
 - Full-pipeline mock-LLM smoke test (Task 23, requires local PostgreSQL via `SMOKE_TEST_DATABASE_URL`) — **implemented**
 - Docker / Docker Compose (Task 25 — app, db, dashboard and a test stack) — **implemented**
 - PostgreSQL integration test suite (Task 27 — `tests/integration/`, run via `docker-compose.test.yml`) — **implemented**
+- Property-based test suite (Task 28 — `tests/properties/`, Hypothesis, 100 examples per property) — **implemented**
 - README demo flow
 
 ---
@@ -650,7 +674,7 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 
 Toplam **435 unit test** başarıyla geçmektedir.
 
-Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose kurulumu (Task 25) uygulanmıştır: `Dockerfile` (migration'ı çalıştırıp ardından 8000 portunda `uvicorn` başlatan FastAPI uygulama imajı), `Dockerfile.dashboard` (8501 portunda Streamlit imajı), `docker-compose.yml` (`db` → `pgdata` volume ve `pg_isready` healthcheck ile postgres:15, `app` ve `dashboard` servislerini tüm ortam değişkenleriyle — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, boş `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — birbirine bağlar; imajlara hiçbir gizli anahtar gömülmez) ve `docker-compose.test.yml` (ayrı bir `ai_export_smoke` veritabanına karşı unit + smoke testlerini çalıştırır) dosyalarını içerir. `docker compose up --build` komutu tüm yığını ayağa kaldırır; `GET http://localhost:8000/health` `{"status": "ok"}` döner ve dashboard `http://localhost:8501` adresinde açılır (`docker compose down -v` ile kapatılır). Docker, ağ erişimi veya gerçek bir OpenAI anahtarı gerektirmez (mock LLM modu). Gerçek OpenAI enrichment entegrasyonu (Task 26) uygulanmıştır: varsayılan mock moduna ek olarak, `MOCK_LLM_ENABLED=false` ayarlandığında `RealLLMProvider` devreye girer ve `OPENAI_API_KEY` gerektirir. Gerçek API çağrısı yapan canlı test (`tests/integration/test_real_llm.py`, `live_llm` işaretli) varsayılan olarak atlanır; yalnızca hem `OPENAI_API_KEY` hem de `RUN_LIVE_LLM_TESTS=true` ayarlandığında çalışır, aksi halde başarısız değil atlanmış olarak raporlanır. Unit testler, Docker ve smoke testi için OpenAI anahtarı gerekmez. PostgreSQL entegrasyon test paketi (Task 27 — `tests/integration/`) artık mevcuttur: CSV ingestion, tam mock-LLM pipeline'ı, `pipeline_runs` yaşam döngüsü ve sayaçları, altı FastAPI route'unun tamamı ile veri kalitesi raporu üretimi/erişimini gerçek bir PostgreSQL veritabanına karşı `docker-compose.test.yml` üzerinden çalıştırır; her test taze bir session oluşturup proje tablolarını öncesinde ve sonrasında truncate eder (askıda transaction veya artık test verisi bırakmaz) ve OpenAI anahtarı, ağ erişimi veya gerçek API çağrısı gerektirmez — `DATABASE_URL` ayarlı değilse atlanır. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama) eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
+Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose kurulumu (Task 25) uygulanmıştır: `Dockerfile` (migration'ı çalıştırıp ardından 8000 portunda `uvicorn` başlatan FastAPI uygulama imajı), `Dockerfile.dashboard` (8501 portunda Streamlit imajı), `docker-compose.yml` (`db` → `pgdata` volume ve `pg_isready` healthcheck ile postgres:15, `app` ve `dashboard` servislerini tüm ortam değişkenleriyle — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, boş `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — birbirine bağlar; imajlara hiçbir gizli anahtar gömülmez) ve `docker-compose.test.yml` (ayrı bir `ai_export_smoke` veritabanına karşı unit + smoke testlerini çalıştırır) dosyalarını içerir. `docker compose up --build` komutu tüm yığını ayağa kaldırır; `GET http://localhost:8000/health` `{"status": "ok"}` döner ve dashboard `http://localhost:8501` adresinde açılır (`docker compose down -v` ile kapatılır). Docker, ağ erişimi veya gerçek bir OpenAI anahtarı gerektirmez (mock LLM modu). Gerçek OpenAI enrichment entegrasyonu (Task 26) uygulanmıştır: varsayılan mock moduna ek olarak, `MOCK_LLM_ENABLED=false` ayarlandığında `RealLLMProvider` devreye girer ve `OPENAI_API_KEY` gerektirir. Gerçek API çağrısı yapan canlı test (`tests/integration/test_real_llm.py`, `live_llm` işaretli) varsayılan olarak atlanır; yalnızca hem `OPENAI_API_KEY` hem de `RUN_LIVE_LLM_TESTS=true` ayarlandığında çalışır, aksi halde başarısız değil atlanmış olarak raporlanır. Unit testler, Docker ve smoke testi için OpenAI anahtarı gerekmez. PostgreSQL entegrasyon test paketi (Task 27 — `tests/integration/`) artık mevcuttur: CSV ingestion, tam mock-LLM pipeline'ı, `pipeline_runs` yaşam döngüsü ve sayaçları, altı FastAPI route'unun tamamı ile veri kalitesi raporu üretimi/erişimini gerçek bir PostgreSQL veritabanına karşı `docker-compose.test.yml` üzerinden çalıştırır; her test taze bir session oluşturup proje tablolarını öncesinde ve sonrasında truncate eder (askıda transaction veya artık test verisi bırakmaz) ve OpenAI anahtarı, ağ erişimi veya gerçek API çağrısı gerektirmez — `DATABASE_URL` ayarlı değilse atlanır. Hypothesis tabanlı property test paketi (Task 28 — `tests/properties/`) artık mevcuttur: CSV kayıt sayısının korunması, zorunlu alan denetimi, doğrulama hatalarının doğru alana atfedilmesi, enrichment durum taksonomisi, retry sayacı tavanı ve idempotency anahtarı determinizmi olmak üzere altı özelliği `@settings(max_examples=100)` ile her biri 100 üretilmiş örnekle test eder; tamamen çevrimdışıdır (PostgreSQL, ağ veya OpenAI anahtarı gerektirmez) ve `python -m pytest tests/properties/ -v --hypothesis-show-statistics` ile çalıştırılır. Containerlı test paketi (`docker-compose.test.yml`) de artık property testlerini çalıştırır. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama) eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
