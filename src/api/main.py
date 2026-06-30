@@ -16,9 +16,9 @@ Design constraints (kept deliberately small for the scaffold):
 * ``/health`` is minimal and deterministic — it performs no database query and
   needs no environment variables or API keys.
 
-The leads routes (Task 20) are wired up via :data:`leads_router`. Pipeline run
-routes (Task 21) and the dashboard (Task 22) are intentionally **not** wired up
-here yet.
+The leads routes (Task 20) are wired up via :data:`leads_router` and the
+pipeline run / quality report routes (Task 21) via :data:`pipeline_runs_router`.
+The dashboard (Task 24) is intentionally **not** wired up here yet.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # its canonical location).  Importing it here does NOT open a connection — the
 # engine/session are built lazily on first request.
 from src.api.routes.leads import router as leads_router
+from src.api.routes.pipeline_runs import router as pipeline_runs_router
 from src.database.session import get_db  # noqa: F401  (re-exported dependency)
 
 # Local development origins for the Streamlit dashboard (8501) and a generic
@@ -75,6 +76,7 @@ app.add_middleware(
 
 
 app.include_router(leads_router)
+app.include_router(pipeline_runs_router)
 
 
 @app.get("/health")

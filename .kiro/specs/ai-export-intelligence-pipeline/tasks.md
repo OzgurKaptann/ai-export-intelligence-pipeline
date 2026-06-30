@@ -266,7 +266,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** All 3 endpoints return JSON; 404 for missing lead_id; `min_score` filter works
   - **Suggested commit:** `feat(api): add leads routes with filtering and 404 handling`
 
-- [ ] 21. FastAPI pipeline runs and quality report routes
+- [x] 21. FastAPI pipeline runs and quality report routes
   - Implement `src/api/routes/pipeline_runs.py` with 2 routes:
     - `GET /pipeline-runs` → list all pipeline runs with summary (use `SELECT * FROM pipeline_runs ORDER BY started_at DESC`)
     - `GET /pipeline-runs/{run_id}/report` → get data quality report for a specific run (404 if not found)

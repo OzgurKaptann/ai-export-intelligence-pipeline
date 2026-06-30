@@ -7,8 +7,8 @@ These tests verify the scaffold contract in complete isolation:
   does not open a connection or build the module-level ``SessionLocal``.
 * No ``DATABASE_URL`` is required to import the app or hit ``/health``.
 * No OpenAI, no network and no ``OPENAI_API_KEY``.
-* Only the scaffold routes exist — none of the Task 20+ business routes
-  (``/leads``, ``/pipeline-runs``, ...) have leaked in.
+* The scaffold routes plus the wired-up business routers are present — the
+  ``/leads`` (Task 20) and ``/pipeline-runs`` (Task 21) routes are registered.
 """
 
 from __future__ import annotations
@@ -140,9 +140,9 @@ def test_health_and_leads_routes_registered():
     assert any(p.startswith("/leads") for p in paths), "leads routes missing"
 
 
-def test_no_pipeline_runs_routes_yet():
-    # Task 21 routes must not have leaked in with Task 20.
+def test_pipeline_runs_routes_registered():
+    # Task 21 intentionally adds the /pipeline-runs routes.
     paths = {route.path for route in app.routes if hasattr(route, "path")}
-    assert not any(p.startswith("/pipeline-runs") for p in paths), (
-        "unexpected /pipeline-runs route present"
+    assert any(p.startswith("/pipeline-runs") for p in paths), (
+        "pipeline-runs routes missing"
     )
