@@ -68,12 +68,12 @@ Completed so far:
 - Skip-mode duplicate handling in CSV ingestion (a validated row whose business identity / idempotency key was already ingested is counted as `skipped` instead of crashing on the `raw_leads.idempotency_key` unique constraint)
 - Streamlit dashboard (`dashboard/app.py`; four `st.sidebar`-navigated pages — Overview (total leads, average score, score-distribution `st.bar_chart`), Lead List (a 0–100 score slider that filters `GET /leads?min_score=` into an `st.dataframe`), Lead Detail (select a lead, fetch `GET /leads/{lead_id}` and show it with `st.json`) and Pipeline Runs (`GET /pipeline-runs` plus best-effort per-run `GET /pipeline-runs/{run_id}/report` quality reports) — reads the API base URL from `API_BASE_URL` (default `http://localhost:8000`), calls the existing FastAPI endpoints with `requests` and a timeout, makes no API call at import time, and shows a friendly message instead of a stack trace when the API is unreachable)
 - Docker / Docker Compose setup (Task 25 — `Dockerfile` builds the FastAPI app image that runs the migration then `uvicorn` on port 8000, `Dockerfile.dashboard` builds the Streamlit image on port 8501, `docker-compose.yml` wires `db` (postgres:15 with a `pgdata` volume and a `pg_isready` healthcheck), `app` and `dashboard` together with all env vars — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, an empty `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — and no baked-in secrets, and `docker-compose.test.yml` runs the unit + smoke suites against a dedicated `ai_export_smoke` database; `docker compose up --build` brings the stack up with `GET /health` returning `{"status": "ok"}` and the dashboard at `http://localhost:8501`)
-- **435 passing unit tests** (436 including the smoke test, which the test compose runs against a containerised PostgreSQL)
+- PostgreSQL integration test suite (Task 27 — `tests/integration/`; five modules covering CSV ingestion, the full mock-LLM enrichment pipeline, `pipeline_runs` lifecycle and counts, all six FastAPI routes and data quality report generation/retrieval, run against a real PostgreSQL via `docker-compose.test.yml`; each test creates a fresh session and truncates the project tables before and after, so no dangling transactions or leftover data, and no OpenAI key, network or real API call is involved — the suite is skipped when `DATABASE_URL` is unset)
+- **435 passing unit tests** (451 including the smoke and PostgreSQL integration tests, which the test compose runs against a containerised PostgreSQL)
 
 Planned next:
 
 - Real knowledge base retrieval (RAG / vector search)
-- PostgreSQL integration tests
 
 ---
 
@@ -447,7 +447,8 @@ On startup the `app` container runs `migrations/run_migrations.py` and then
 ### Tests in Docker
 
 `docker-compose.test.yml` brings up a dedicated `ai_export_smoke` PostgreSQL
-and runs the unit suite plus the full-pipeline smoke test inside a container:
+and runs the unit suite, the full-pipeline smoke test and the PostgreSQL
+integration test suite (Task 27) inside a container:
 
 ```powershell
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
@@ -492,6 +493,26 @@ python -m pytest tests/unit/ -v
 $env:SMOKE_TEST_DATABASE_URL="postgresql+psycopg2://postgres:password@localhost:5432/ai_export_smoke"
 python -m pytest tests/smoke/test_pipeline_smoke.py -v
 ```
+
+### PostgreSQL integration test suite (Task 27, requires PostgreSQL)
+
+The integration tests in `tests/integration/` run the real components against a
+real PostgreSQL database (never SQLite). They read `DATABASE_URL` from the
+environment and are **skipped** when it is unset, and they only ever truncate a
+database whose URL names a dedicated `test` / `smoke` / `ci` target. Each test
+creates a fresh session and truncates the project tables before and after, so no
+transactions or test data are left dangling. The mock LLM stays the default, so
+no OpenAI key, network or real API call is required.
+
+```powershell
+# Run the integration suite against a dedicated local PostgreSQL database
+$env:DATABASE_URL="postgresql+psycopg2://postgres:password@localhost:5432/ai_export_test"
+python -m pytest tests/integration/ -v
+```
+
+The simplest way to run them is via `docker-compose.test.yml`, which spins up
+PostgreSQL and runs the unit, smoke and integration suites together (see
+[Tests in Docker](#tests-in-docker)).
 
 ### Real OpenAI mode and the live LLM test (optional, Task 26)
 
@@ -586,7 +607,7 @@ LOG_LEVEL=INFO
 - Synthetic sample data (generator script + `data/sample/leads.csv`) — **implemented**
 - Full-pipeline mock-LLM smoke test (Task 23, requires local PostgreSQL via `SMOKE_TEST_DATABASE_URL`) — **implemented**
 - Docker / Docker Compose (Task 25 — app, db, dashboard and a test stack) — **implemented**
-- PostgreSQL integration tests
+- PostgreSQL integration test suite (Task 27 — `tests/integration/`, run via `docker-compose.test.yml`) — **implemented**
 - README demo flow
 
 ---
@@ -629,7 +650,7 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 
 Toplam **435 unit test** başarıyla geçmektedir.
 
-Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose kurulumu (Task 25) uygulanmıştır: `Dockerfile` (migration'ı çalıştırıp ardından 8000 portunda `uvicorn` başlatan FastAPI uygulama imajı), `Dockerfile.dashboard` (8501 portunda Streamlit imajı), `docker-compose.yml` (`db` → `pgdata` volume ve `pg_isready` healthcheck ile postgres:15, `app` ve `dashboard` servislerini tüm ortam değişkenleriyle — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, boş `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — birbirine bağlar; imajlara hiçbir gizli anahtar gömülmez) ve `docker-compose.test.yml` (ayrı bir `ai_export_smoke` veritabanına karşı unit + smoke testlerini çalıştırır) dosyalarını içerir. `docker compose up --build` komutu tüm yığını ayağa kaldırır; `GET http://localhost:8000/health` `{"status": "ok"}` döner ve dashboard `http://localhost:8501` adresinde açılır (`docker compose down -v` ile kapatılır). Docker, ağ erişimi veya gerçek bir OpenAI anahtarı gerektirmez (mock LLM modu). Gerçek OpenAI enrichment entegrasyonu (Task 26) uygulanmıştır: varsayılan mock moduna ek olarak, `MOCK_LLM_ENABLED=false` ayarlandığında `RealLLMProvider` devreye girer ve `OPENAI_API_KEY` gerektirir. Gerçek API çağrısı yapan canlı test (`tests/integration/test_real_llm.py`, `live_llm` işaretli) varsayılan olarak atlanır; yalnızca hem `OPENAI_API_KEY` hem de `RUN_LIVE_LLM_TESTS=true` ayarlandığında çalışır, aksi halde başarısız değil atlanmış olarak raporlanır. Unit testler, Docker ve smoke testi için OpenAI anahtarı gerekmez. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama) ve PostgreSQL entegrasyon testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
+Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose kurulumu (Task 25) uygulanmıştır: `Dockerfile` (migration'ı çalıştırıp ardından 8000 portunda `uvicorn` başlatan FastAPI uygulama imajı), `Dockerfile.dashboard` (8501 portunda Streamlit imajı), `docker-compose.yml` (`db` → `pgdata` volume ve `pg_isready` healthcheck ile postgres:15, `app` ve `dashboard` servislerini tüm ortam değişkenleriyle — `DATABASE_URL`, `MOCK_LLM_ENABLED=true`, boş `OPENAI_API_KEY`, `KB_ENABLED=false`, `API_BASE_URL` — birbirine bağlar; imajlara hiçbir gizli anahtar gömülmez) ve `docker-compose.test.yml` (ayrı bir `ai_export_smoke` veritabanına karşı unit + smoke testlerini çalıştırır) dosyalarını içerir. `docker compose up --build` komutu tüm yığını ayağa kaldırır; `GET http://localhost:8000/health` `{"status": "ok"}` döner ve dashboard `http://localhost:8501` adresinde açılır (`docker compose down -v` ile kapatılır). Docker, ağ erişimi veya gerçek bir OpenAI anahtarı gerektirmez (mock LLM modu). Gerçek OpenAI enrichment entegrasyonu (Task 26) uygulanmıştır: varsayılan mock moduna ek olarak, `MOCK_LLM_ENABLED=false` ayarlandığında `RealLLMProvider` devreye girer ve `OPENAI_API_KEY` gerektirir. Gerçek API çağrısı yapan canlı test (`tests/integration/test_real_llm.py`, `live_llm` işaretli) varsayılan olarak atlanır; yalnızca hem `OPENAI_API_KEY` hem de `RUN_LIVE_LLM_TESTS=true` ayarlandığında çalışır, aksi halde başarısız değil atlanmış olarak raporlanır. Unit testler, Docker ve smoke testi için OpenAI anahtarı gerekmez. PostgreSQL entegrasyon test paketi (Task 27 — `tests/integration/`) artık mevcuttur: CSV ingestion, tam mock-LLM pipeline'ı, `pipeline_runs` yaşam döngüsü ve sayaçları, altı FastAPI route'unun tamamı ile veri kalitesi raporu üretimi/erişimini gerçek bir PostgreSQL veritabanına karşı `docker-compose.test.yml` üzerinden çalıştırır; her test taze bir session oluşturup proje tablolarını öncesinde ve sonrasında truncate eder (askıda transaction veya artık test verisi bırakmaz) ve OpenAI anahtarı, ağ erişimi veya gerçek API çağrısı gerektirmez — `DATABASE_URL` ayarlı değilse atlanır. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama) eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
@@ -639,4 +660,4 @@ Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine 
 
 This repository is under active development.  
 The current version covers the data layer, per-lead processing and end-to-end orchestration: schema design, validation, database modeling, repository behavior, CSV ingestion, structured logging, mock-mode LLM enrichment with a validation gate, retry orchestration, lead scoring, the pipeline orchestrator with `pipeline_run` lifecycle tracking and data quality report generation.  
-A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator and data quality report generation are unit-testable with fake dependencies. A full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`) verifies the end-to-end flow against a local PostgreSQL database when `SMOKE_TEST_DATABASE_URL` is set, and is skipped otherwise. The Streamlit dashboard (`dashboard/app.py`, Task 24) reads `API_BASE_URL` and renders four read-only pages over the existing FastAPI endpoints. The full stack is containerised (Task 25): `docker compose up --build` starts PostgreSQL, the FastAPI app (which runs migrations then `uvicorn`) and the Streamlit dashboard, and `docker-compose.test.yml` runs the unit + smoke suites against a containerised database. The optional real OpenAI provider (Task 26) is wired in: mock mode stays the default, and setting `MOCK_LLM_ENABLED=false` with an `OPENAI_API_KEY` uses the real API, while the live integration test is skipped unless `OPENAI_API_KEY` and `RUN_LIVE_LLM_TESTS=true` are both set. Upcoming iterations will add real knowledge base retrieval (RAG / vector search) and PostgreSQL integration tests.
+A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator and data quality report generation are unit-testable with fake dependencies. A full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`) verifies the end-to-end flow against a local PostgreSQL database when `SMOKE_TEST_DATABASE_URL` is set, and is skipped otherwise. The Streamlit dashboard (`dashboard/app.py`, Task 24) reads `API_BASE_URL` and renders four read-only pages over the existing FastAPI endpoints. The full stack is containerised (Task 25): `docker compose up --build` starts PostgreSQL, the FastAPI app (which runs migrations then `uvicorn`) and the Streamlit dashboard, and `docker-compose.test.yml` runs the unit + smoke suites against a containerised database. The optional real OpenAI provider (Task 26) is wired in: mock mode stays the default, and setting `MOCK_LLM_ENABLED=false` with an `OPENAI_API_KEY` uses the real API, while the live integration test is skipped unless `OPENAI_API_KEY` and `RUN_LIVE_LLM_TESTS=true` are both set. The PostgreSQL integration test suite (Task 27, `tests/integration/`) runs the real components — CSV ingestion, the full mock-LLM pipeline, `pipeline_runs` tracking, all six FastAPI routes and data quality reporting — against a real PostgreSQL via `docker-compose.test.yml`, cleaning up after each test and requiring no OpenAI key; it is skipped when `DATABASE_URL` is unset. Upcoming iterations will add real knowledge base retrieval (RAG / vector search).
