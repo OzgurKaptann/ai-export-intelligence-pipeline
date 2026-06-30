@@ -212,6 +212,13 @@ python -m pytest tests/properties/ -v --hypothesis-show-statistics
 The full containerised suite (unit + property + smoke + integration) against a
 real PostgreSQL:
 
+> **Tear the demo stack down first.** Both compose files share this directory's
+> Docker Compose project name (and therefore the `db` container/volume), so the
+> test stack must run on its own. If you started the demo stack above, run
+> `docker compose down -v` before this step, otherwise the test `db` reuses the
+> demo volume (which only has the `ai_export` database) and the smoke/integration
+> tests error with `database "ai_export_smoke" does not exist`.
+
 ```powershell
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
 docker compose -f docker-compose.test.yml down -v

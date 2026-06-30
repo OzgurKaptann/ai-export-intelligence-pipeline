@@ -334,6 +334,12 @@ python -m pytest tests/integration/ -v
 Spins up a dedicated PostgreSQL and runs unit + property + smoke + integration
 together:
 
+> **Run it with the main stack down.** This test stack shares the project's
+> Docker Compose project name (and so the `db` container/volume) with
+> `docker compose up`. Run `docker compose down -v` first if the main stack is
+> up, or the test `db` reuses the main `ai_export` volume and the
+> smoke/integration tests error with `database "ai_export_smoke" does not exist`.
+
 ```powershell
 docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
 docker compose -f docker-compose.test.yml down -v

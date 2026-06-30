@@ -383,15 +383,24 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `docs: add comprehensive readme, architecture guide, and demo script`
 
 
-- [ ] 30. Final checkpoint — ensure all tests pass and complete demo
+- [x] 30. Final checkpoint — ensure all tests pass and complete demo
   - Run full test suite: `pytest --cov=src --cov-report=html -v`
-  - Run smoke tests against Docker Compose stack: `docker-compose up -d && pytest tests/smoke/ -v`
+  - Run smoke tests against Docker Compose stack: `docker compose up -d && pytest tests/smoke/ -v`
   - Execute demo script from `docs/DEMO.md` end-to-end
   - Verify code coverage is >80%
   - Fix any failing tests or missing coverage
   - Ensure all tests pass, ask the user if questions arise.
   - _Requirements: 11.5_
   - **Acceptance criteria:** All tests green; coverage report generated; demo runs without errors; all requirements validated
+  - **Validation result (mock LLM only, no OpenAI key, no real API call):** host run
+    `python -m pytest --cov=src --cov-report=html -v` → **458 passed, 19 skipped**,
+    **95% coverage**, `htmlcov/` generated. Containerised suite
+    (`docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test`,
+    run with the demo stack down) → **474 passed, 3 skipped** (3 skips are the
+    live-LLM tests). Demo stack (`docker compose up --build -d`) healthy;
+    `/health` → `{"status":"ok"}`; orchestrator run on `data/sample/leads.csv`
+    → `completed` (20 total, 17 valid, 2 invalid, 17 enriched, 17 scored);
+    `/leads`, `/pipeline-runs`, `/pipeline-runs/{id}/report` all verified.
   - **Suggested commit:** `test: verify full test suite and demo script pass`
 
 ---
