@@ -18,6 +18,7 @@ import pytest
 
 from src.enrichment.llm_enrichment import LLMEnrichmentModule
 from src.enrichment.mock_llm import MockLLMProvider
+from src.enrichment.real_llm import RealLLMConfigError, RealLLMProvider
 from src.validation.enrichment_schemas import EnrichmentOutputSchema
 from src.validation.input_schemas import EnrichmentResult, RawLeadSchema
 
@@ -320,6 +321,34 @@ def test_repository_interaction_only_through_insert_enrichment():
 # Real-LLM boundary (mockable, no network)
 # ---------------------------------------------------------------------------
 
+class FakeOpenAIClient:
+    """Offline stand-in for openai.OpenAI; returns a canned response."""
+
+    def __init__(self, content: str, model: str = "gpt-4o-mini-2024-07-18") -> None:
+        message = SimpleNamespace(content=content)
+        choice = SimpleNamespace(message=message)
+        response = SimpleNamespace(choices=[choice], model=model)
+
+        def create(**kwargs):
+            self.last_call = kwargs
+            return response
+
+        self.last_call = None
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=create))
+
+
+def build_real_module(repo, settings, *, content, model="gpt-4o-mini-2024-07-18"):
+    """Wire a module in real mode with a RealLLMProvider over a fake client."""
+    client = FakeOpenAIClient(content=content, model=model)
+    real_provider = RealLLMProvider(settings_provider=settings, client=client)
+    module = LLMEnrichmentModule(
+        settings=settings,
+        real_provider=real_provider,
+        repository_factory=lambda session: repo,
+    )
+    return module
+
+
 def test_real_llm_path_is_mockable_without_network(monkeypatch):
     repo = FakeRepository()
     settings = make_settings(mock_enabled=False)
@@ -342,13 +371,53 @@ def test_real_llm_path_is_mockable_without_network(monkeypatch):
     assert repo.enrichments[0]["model_name"] == "gpt-4o-mini"
 
 
-def test_real_llm_path_unimplemented_raises_loudly():
+def test_real_mode_uses_real_provider_and_persists_response_model():
     repo = FakeRepository()
     settings = make_settings(mock_enabled=False)
+    module = build_real_module(
+        repo, settings,
+        content='{"market_potential": 0.6, "export_readiness": 0.6,'
+                ' "risk_assessment": {"overall_risk": 0.3},'
+                ' "recommended_markets": ["Germany"], "confidence_score": 0.6}',
+        model="gpt-4o-mini-2024-07-18",
+    )
+
+    result = run(module)
+
+    assert result.enrichment_status == "success"
+    # model_name comes from the actual API response, not just the config value.
+    assert repo.enrichments[0]["model_name"] == "gpt-4o-mini-2024-07-18"
+
+
+def test_real_mode_invalid_json_maps_to_invalid_json():
+    repo = FakeRepository()
+    settings = make_settings(mock_enabled=False)
+    module = build_real_module(repo, settings, content="not-json{")
+
+    result = run(module)
+
+    assert result.enrichment_status == "invalid_json"
+    assert repo.enrichments[0]["raw_llm_response"] == "not-json{"
+
+
+def test_real_mode_empty_response_maps_to_empty_response():
+    repo = FakeRepository()
+    settings = make_settings(mock_enabled=False)
+    module = build_real_module(repo, settings, content="")
+
+    result = run(module)
+
+    assert result.enrichment_status == "empty_response"
+
+
+def test_real_mode_missing_key_without_client_raises_loudly():
+    repo = FakeRepository()
+    settings = make_settings(mock_enabled=False, openai_api_key="")
+    # No injected client/provider -> a real client would be needed, but no key
+    # is configured. This is a misconfiguration and must surface loudly rather
+    # than be recorded as a per-lead failure.
     module, _ = build_module(repo, settings=settings)
 
-    # Without monkeypatching, the real path is a programmer error and must not
-    # be silently recorded as a runtime failure.
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(RealLLMConfigError):
         run(module)
     assert repo.enrichments == []

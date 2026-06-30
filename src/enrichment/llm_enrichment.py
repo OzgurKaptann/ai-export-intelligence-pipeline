@@ -24,10 +24,14 @@ Design notes
   unit tests can inject a fake repository and a sentinel session and exercise
   the whole flow with no database.
 * When ``MOCK_LLM_ENABLED`` is true the real-LLM branch is never touched, so
-  ``OPENAI_API_KEY`` is not required.
+  ``OPENAI_API_KEY`` is not required and no OpenAI client is ever built.  When
+  it is false the module delegates to :class:`RealLLMProvider`
+  (``src.enrichment.real_llm``), which performs the OpenAI call.
 * Failures are mapped onto the existing nine-value enrichment status taxonomy;
-  exceptions are classified, not swallowed.  A genuinely unimplemented real
-  path raises loudly rather than being recorded as a runtime failure.
+  exceptions are classified, not swallowed.  The three transient OpenAI errors
+  map to ``timeout`` / ``network_error`` / ``rate_limited``; a misconfiguration
+  (real mode with no ``OPENAI_API_KEY``) raises loudly rather than being
+  recorded as a per-lead runtime failure.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ from pydantic import ValidationError
 from src.database.repository import PipelineRepository
 from src.enrichment.mock_llm import MockLLMProvider
 from src.enrichment.prompt_builder import PROMPT_VERSION, build_enrichment_prompt
+from src.enrichment.real_llm import RealLLMConfigError, RealLLMProvider
 from src.enrichment.retry_policy import is_retryable, should_retry
 from src.logging_config import get_logger
 from src.validation.enrichment_schemas import EnrichmentOutputSchema
@@ -88,6 +93,12 @@ class LLMEnrichmentModule:
     provider:
         The mock LLM provider instance.  Defaults to a fresh
         :class:`MockLLMProvider`.
+    real_provider:
+        The real OpenAI provider instance used when ``MOCK_LLM_ENABLED`` is
+        false.  Defaults to ``None`` and is created lazily (only when the real
+        path is actually exercised) from a :class:`RealLLMProvider` bound to
+        these settings, so mock mode never builds a client or reads
+        ``OPENAI_API_KEY``.  Tests inject a provider with a fake client.
     repository_factory:
         Callable turning a session into a repository.  Defaults to
         :class:`PipelineRepository`, so production code gets real persistence
@@ -114,6 +125,7 @@ class LLMEnrichmentModule:
         self,
         settings,
         provider: Optional[MockLLMProvider] = None,
+        real_provider: Optional[RealLLMProvider] = None,
         repository_factory: RepositoryFactory = PipelineRepository,
         logger=None,
         max_retries: Optional[int] = None,
@@ -123,6 +135,7 @@ class LLMEnrichmentModule:
     ) -> None:
         self._settings = settings
         self._provider = provider or MockLLMProvider()
+        self._real_provider = real_provider
         self._repository_factory = repository_factory
         self._logger = logger or get_logger(__name__)
         # Retry knobs: stored as overrides so the config-derived defaults stay
@@ -185,9 +198,10 @@ class LLMEnrichmentModule:
                 raw_response=exc.raw_response,
                 retry_count=retry_count,
             )
-        except NotImplementedError:
-            # An unimplemented real path is a programmer error, not a runtime
-            # failure mode — surface it loudly instead of masking it.
+        except (NotImplementedError, RealLLMConfigError):
+            # Misconfiguration (e.g. real mode with no OPENAI_API_KEY) is a
+            # deployment/programmer error, not a per-lead runtime failure mode —
+            # surface it loudly instead of masking it as N "unknown_error" rows.
             raise
         except Exception as exc:  # noqa: BLE001 - deliberately the catch-all gate
             self._logger.error(
@@ -313,6 +327,19 @@ class LLMEnrichmentModule:
             return self._provider.enrich_lead(lead, context=None)
         return self._call_real_llm(lead, prompt)
 
+    def _get_real_provider(self) -> RealLLMProvider:
+        """Return the real provider, creating it lazily bound to these settings.
+
+        Created only when the real path is first touched, so mock mode never
+        builds an OpenAI client or reads ``OPENAI_API_KEY``.  Tests may inject a
+        provider with a fake client via the constructor.
+        """
+        if self._real_provider is None:
+            self._real_provider = RealLLMProvider(
+                settings_provider=lambda: self._settings
+            )
+        return self._real_provider
+
     def _call_real_llm(
         self,
         lead: Union[RawLeadSchema, dict],
@@ -320,15 +347,29 @@ class LLMEnrichmentModule:
     ) -> str:
         """Real OpenAI enrichment boundary (isolated, monkeypatch-ready).
 
-        Production wiring for the real provider lands in a later task.  Kept as
-        a single seam so it can be monkeypatched in tests without any network
-        access; it must return a raw JSON string that flows through the same
-        validation gate as the mock path.
+        Delegates to :meth:`RealLLMProvider.generate`, returning the raw JSON
+        string so it flows through the same validation gate as the mock path.
+        The three transient OpenAI failures are mapped onto the existing
+        enrichment-status taxonomy; every other path (success, config errors,
+        bad JSON) is left to the shared gate / loud re-raise in
+        :meth:`enrich_lead`.
+
+        Note: in the installed ``openai`` v1 SDK the timeout exception is
+        ``openai.APITimeoutError`` (``openai.Timeout`` is the httpx timeout
+        *config* object, not an exception).  ``APITimeoutError`` subclasses
+        ``APIConnectionError``, so it must be caught first.
         """
-        raise NotImplementedError(
-            "Real OpenAI enrichment is not wired up yet; set MOCK_LLM_ENABLED "
-            "true or monkeypatch _call_real_llm."
-        )
+        import openai
+
+        provider = self._get_real_provider()
+        try:
+            return provider.generate(lead, prompt)
+        except openai.APITimeoutError as exc:
+            raise _EnrichmentFailure("timeout", str(exc))
+        except openai.APIConnectionError as exc:
+            raise _EnrichmentFailure("network_error", str(exc))
+        except openai.RateLimitError as exc:
+            raise _EnrichmentFailure("rate_limited", str(exc))
 
     # ------------------------------------------------------------------ #
     # Validation gate
@@ -482,10 +523,15 @@ class LLMEnrichmentModule:
 
     @property
     def _model_name(self) -> str:
-        """The model identifier to record for the active provider."""
+        """The model identifier to record for the active provider.
+
+        In real mode this is the real provider's ``model_name``, which reflects
+        the actual model from the API response after a call (e.g. a dated
+        snapshot) and falls back to the configured ``OPENAI_MODEL`` otherwise.
+        """
         if self._settings.MOCK_LLM_ENABLED:
             return getattr(self._provider, "model_name", MockLLMProvider.model_name)
-        return self._settings.OPENAI_MODEL
+        return self._get_real_provider().model_name
 
     @property
     def _max_retries(self) -> int:
