@@ -6,7 +6,7 @@ This project is being developed as a production-oriented data pipeline, not just
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
 > **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate, the enrichment retry orchestration loop, the lead scoring module, the knowledge base stub, the pipeline orchestrator (with `pipeline_run` lifecycle tracking), data quality report generation, the FastAPI application scaffold (`/health` endpoint, `get_db` dependency, local CORS), the FastAPI leads routes (scored lead list / detail / filter) and the FastAPI pipeline run and quality report routes (`/pipeline-runs` list, `/pipeline-runs/{run_id}/report`) completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`), the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`), unit-testable data quality report generation (`generate_report`; counts each stage's rows for a run and stores one `data_quality_reports` row), the FastAPI application scaffold (`src.api.main:app` with an async `lifespan`, a deterministic `GET /health` returning `{"status": "ok"}`, the re-exported `get_db` session dependency and local-development CORS — no settings load, session or database connection at import time), the FastAPI leads routes (`GET /leads` with optional `min_score`, `GET /leads/filter`, `GET /leads/{lead_id}` with 404 handling, returning `ScoredLeadResponse` models) and the FastAPI pipeline run and quality report routes (`GET /pipeline-runs` listing runs newest-first as `PipelineRunResponse`, `GET /pipeline-runs/{run_id}/report` returning the run's `DataQualityReportResponse` with a 404 when missing), the synthetic sample data generator (`data/sample/generate_sample_data.py` plus the committed `data/sample/leads.csv` with 20 fictional records) and the full-pipeline mock-LLM smoke test (Task 23 — `tests/smoke/test_pipeline_smoke.py`, run end-to-end against a local PostgreSQL via `SMOKE_TEST_DATABASE_URL` and skipped when it is unset) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far), the Streamlit dashboard (Task 24) and Docker / Docker Compose (Task 25) are planned for upcoming iterations.
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`), the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`), unit-testable data quality report generation (`generate_report`; counts each stage's rows for a run and stores one `data_quality_reports` row), the FastAPI application scaffold (`src.api.main:app` with an async `lifespan`, a deterministic `GET /health` returning `{"status": "ok"}`, the re-exported `get_db` session dependency and local-development CORS — no settings load, session or database connection at import time), the FastAPI leads routes (`GET /leads` with optional `min_score`, `GET /leads/filter`, `GET /leads/{lead_id}` with 404 handling, returning `ScoredLeadResponse` models) and the FastAPI pipeline run and quality report routes (`GET /pipeline-runs` listing runs newest-first as `PipelineRunResponse`, `GET /pipeline-runs/{run_id}/report` returning the run's `DataQualityReportResponse` with a 404 when missing), the synthetic sample data generator (`data/sample/generate_sample_data.py` plus the committed `data/sample/leads.csv` with 20 fictional records), the full-pipeline mock-LLM smoke test (Task 23 — `tests/smoke/test_pipeline_smoke.py`, run end-to-end against a local PostgreSQL via `SMOKE_TEST_DATABASE_URL` and skipped when it is unset) and the Streamlit dashboard (Task 24 — `dashboard/app.py` with Overview / Lead List / Lead Detail / Pipeline Runs pages that read `API_BASE_URL` and call the existing FastAPI endpoints over HTTP) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far) and Docker / Docker Compose (Task 25) are planned for upcoming iterations.
 
 ---
 
@@ -65,13 +65,13 @@ Completed so far:
 - Synthetic sample data generator (`data/sample/generate_sample_data.py`; deterministic, standard-library-only script — no random values, no network, no database, no API key — that writes `data/sample/leads.csv` with 20 fictional export lead records plus a header, using `.example` email domains and varied `product_category` / `target_market` values; includes 18 schema-valid rows, one exact business-identity duplicate to exercise idempotency, one row missing `contact_email` and one row missing `product_category`)
 - Full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`; runs `PipelineOrchestrator` end-to-end against `data/sample/leads.csv` on a local PostgreSQL with `MOCK_LLM_ENABLED=true`, applies the existing migration, truncates only the known project tables, and verifies one `completed` `pipeline_runs` row, the populated `raw_leads` / `validated_leads` / `enrichments` (all `success`) / `scored_leads` and one `data_quality_reports` row; requires `SMOKE_TEST_DATABASE_URL` — and a database whose name contains `test` / `smoke` / `ci` before it will truncate — and is skipped when that variable is unset, so it never needs Docker, the network or a real OpenAI key)
 - Skip-mode duplicate handling in CSV ingestion (a validated row whose business identity / idempotency key was already ingested is counted as `skipped` instead of crashing on the `raw_leads.idempotency_key` unique constraint)
+- Streamlit dashboard (`dashboard/app.py`; four `st.sidebar`-navigated pages — Overview (total leads, average score, score-distribution `st.bar_chart`), Lead List (a 0–100 score slider that filters `GET /leads?min_score=` into an `st.dataframe`), Lead Detail (select a lead, fetch `GET /leads/{lead_id}` and show it with `st.json`) and Pipeline Runs (`GET /pipeline-runs` plus best-effort per-run `GET /pipeline-runs/{run_id}/report` quality reports) — reads the API base URL from `API_BASE_URL` (default `http://localhost:8000`), calls the existing FastAPI endpoints with `requests` and a timeout, makes no API call at import time, and shows a friendly message instead of a stack trace when the API is unreachable)
 - **411 passing unit tests**
 
 Planned next:
 
 - Real knowledge base retrieval (RAG / vector search)
 - Real OpenAI enrichment integration (production wiring)
-- Streamlit dashboard (Task 24)
 - Docker / Docker Compose setup (Task 25)
 - PostgreSQL integration tests
 
@@ -312,7 +312,7 @@ Current completed commits include:
 | Testing | pytest |
 | Property Testing | Hypothesis |
 | API | FastAPI (`/health` + scored lead routes + pipeline run / quality report routes) |
-| Dashboard | Streamlit planned |
+| Dashboard | Streamlit (4-page read-only dashboard over the API) |
 | AI Enrichment | OpenAI / Mock LLM planned |
 | Containerization | Docker Compose planned |
 
@@ -391,6 +391,28 @@ Latest local result:
 ```
 
 The full-pipeline smoke test (`tests/smoke/test_pipeline_smoke.py`) lives outside the unit suite and is **skipped** unless `SMOKE_TEST_DATABASE_URL` points at a local PostgreSQL database.
+
+---
+
+## How to Run the API and Dashboard
+
+The Streamlit dashboard (`dashboard/app.py`) is a read-only view over the
+FastAPI service — it calls the existing endpoints over HTTP and never touches
+the database directly. Start the API first, then point the dashboard at it via
+the `API_BASE_URL` environment variable (default `http://localhost:8000`).
+
+```powershell
+# Run the API
+uvicorn src.api.main:app --reload
+
+# Run the dashboard (separate terminal)
+$env:API_BASE_URL="http://localhost:8000"
+streamlit run dashboard/app.py
+```
+
+The dashboard has four pages (Overview, Lead List, Lead Detail, Pipeline Runs)
+in the sidebar. If the API is not running it shows a friendly message rather
+than crashing.
 
 ---
 
@@ -493,9 +515,9 @@ LOG_LEVEL=INFO
 - FastAPI application scaffold (`/health` endpoint, `get_db` dependency, local CORS) — **implemented**
 - FastAPI leads routes (scored lead list / detail / filter with `min_score`, 404 handling) — **implemented**
 - FastAPI pipeline run and quality report endpoints (`/pipeline-runs` list, `/pipeline-runs/{run_id}/report` with 404 handling) — **implemented**
-- Streamlit dashboard
-- Lead ranking views
-- Quality metrics visualization
+- Streamlit dashboard (4 pages: Overview, Lead List, Lead Detail, Pipeline Runs; reads `API_BASE_URL`, calls the existing FastAPI endpoints) — **implemented**
+- Lead ranking views — **implemented** (Lead List score slider + sortable table)
+- Quality metrics visualization — **implemented** (score-distribution chart + data quality reports table)
 
 ### Production Readiness
 
@@ -540,11 +562,12 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - sentetik örnek veri üretici (`data/sample/generate_sample_data.py`; deterministik, yalnızca standart kütüphane kullanan bir betik — rastgele değer, ağ erişimi, veritabanı veya API anahtarı gerektirmez — `data/sample/leads.csv` dosyasını başlık satırıyla birlikte 20 kurgusal ihracat lead kaydı olarak yazar; `.example` e-posta alan adlarını ve çeşitlendirilmiş `product_category` / `target_market` değerlerini kullanır; 18 şema açısından geçerli satır, idempotency'yi test etmek için birebir aynı iş kimliğine sahip bir kopya satır, `contact_email` eksik bir satır ve `product_category` eksik bir satır içerir),
 - CSV ingestion'da skip-mod tekrar (duplicate) yönetimi (iş kimliği / idempotency anahtarı daha önce eklenmiş geçerli bir satır, `raw_leads.idempotency_key` tekil kısıtını ihlal edip akışı çökertmek yerine `skipped` olarak sayılır),
 - tam pipeline mock-LLM smoke testi (`tests/smoke/test_pipeline_smoke.py`; `PipelineOrchestrator`'ı `data/sample/leads.csv` üzerinde, `MOCK_LLM_ENABLED=true` ile yerel bir PostgreSQL veritabanına karşı uçtan uca çalıştırır, mevcut migration'ı uygular, yalnızca bilinen proje tablolarını truncate eder ve tek bir `completed` `pipeline_runs` satırını, dolu `raw_leads` / `validated_leads` / `enrichments` (hepsi `success`) / `scored_leads` ile tek bir `data_quality_reports` satırını doğrular; `SMOKE_TEST_DATABASE_URL` gerektirir — ve truncate etmeden önce adında `test` / `smoke` / `ci` geçen bir veritabanı ister — bu değişken ayarlı değilse atlanır; Docker, ağ erişimi veya gerçek bir OpenAI anahtarı gerektirmez),
+- Streamlit dashboard (`dashboard/app.py`; `st.sidebar` ile gezilen dört sayfa — Overview (toplam lead sayısı, ortalama skor, `st.bar_chart` ile skor dağılımı), Lead List (`GET /leads?min_score=` çağrısını bir `st.dataframe`'e süzen 0–100 skor kaydırıcısı), Lead Detail (bir lead seçer, `GET /leads/{lead_id}` çağırır ve `st.json` ile gösterir) ve Pipeline Runs (`GET /pipeline-runs` ve her çalışma için en iyi çaba ilkesiyle `GET /pipeline-runs/{run_id}/report` kalite raporları) — API taban adresini `API_BASE_URL` ortam değişkeninden okur (varsayılan `http://localhost:8000`), mevcut FastAPI uçlarını `requests` ve bir zaman aşımıyla çağırır, import anında hiçbir API çağrısı yapmaz ve API erişilemezse stack trace yerine kullanıcı dostu bir mesaj gösterir),
 - unit testler.
 
 Toplam **411 unit test** başarıyla geçmektedir.
 
-Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Docker (Task 25) ve Streamlit dashboard (Task 24) ise sonraki iterasyonlar için planlanmaktadır. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı) ve PostgreSQL entegrasyon testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
+Sentetik örnek veri üretici betiği, `data/sample/leads.csv` dosyası ve tam pipeline mock-LLM smoke testi uygulanmıştır. Smoke testi, `SMOKE_TEST_DATABASE_URL` ayarlandığında yerel bir PostgreSQL veritabanına karşı uçtan uca akışı doğrular; bu değişken ayarlı değilse atlanır. Streamlit dashboard (Task 24) uygulanmıştır: `dashboard/app.py`, `API_BASE_URL` ortam değişkenini okuyup mevcut FastAPI uçlarını çağıran, dört sayfalı (Overview, Lead List, Lead Detail, Pipeline Runs) salt-okunur bir arayüzdür ve `streamlit run dashboard/app.py` ile başlatılır. Docker / Docker Compose (Task 25) ise sonraki iterasyon için planlanmaktadır. Gelecek aşamalarda ayrıca gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı) ve PostgreSQL entegrasyon testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
@@ -554,4 +577,4 @@ Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine 
 
 This repository is under active development.  
 The current version covers the data layer, per-lead processing and end-to-end orchestration: schema design, validation, database modeling, repository behavior, CSV ingestion, structured logging, mock-mode LLM enrichment with a validation gate, retry orchestration, lead scoring, the pipeline orchestrator with `pipeline_run` lifecycle tracking and data quality report generation.  
-A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator and data quality report generation are unit-testable with fake dependencies. A full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`) verifies the end-to-end flow against a local PostgreSQL database when `SMOKE_TEST_DATABASE_URL` is set, and is skipped otherwise; Docker remains planned for Task 25 and the Streamlit dashboard for Task 24. Upcoming iterations will add real knowledge base retrieval (RAG / vector search), production OpenAI wiring, the Streamlit dashboard, Docker/deployment, and PostgreSQL integration tests.
+A knowledge base stub is in place (`retrieve_context` returns `None`); the orchestrator and data quality report generation are unit-testable with fake dependencies. A full-pipeline mock-LLM smoke test (`tests/smoke/test_pipeline_smoke.py`) verifies the end-to-end flow against a local PostgreSQL database when `SMOKE_TEST_DATABASE_URL` is set, and is skipped otherwise. The Streamlit dashboard (`dashboard/app.py`, Task 24) reads `API_BASE_URL` and renders four read-only pages over the existing FastAPI endpoints; Docker remains planned for Task 25. Upcoming iterations will add real knowledge base retrieval (RAG / vector search), production OpenAI wiring, Docker/deployment, and PostgreSQL integration tests.
