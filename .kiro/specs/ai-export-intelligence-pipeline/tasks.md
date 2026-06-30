@@ -301,7 +301,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `pytest tests/unit/ tests/properties/ -v` all green; pipeline runs without unhandled exceptions
   - **Suggested commit:** `test: add smoke test for full pipeline with mock llm`
 
-- [ ] 24. Streamlit dashboard
+- [x] 24. Streamlit dashboard
   - Implement `dashboard/app.py` with 4 pages using `st.sidebar` navigation:
     - **Overview**: fetch `GET /leads` → show total count, average score, score distribution histogram using `st.bar_chart`
     - **Lead List**: fetch `GET /leads?min_score={slider}` → show sortable `st.dataframe` filtered by score slider
