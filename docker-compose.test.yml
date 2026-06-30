@@ -1,0 +1,51 @@
+# =============================================================================
+# docker-compose.test.yml — test stack (Task 25)
+#
+#   db   — PostgreSQL 15 on a dedicated `ai_export_smoke` database (ephemeral;
+#          no named volume so each run starts clean)
+#   test — runs the unit suite plus the full-pipeline smoke test against `db`
+#
+# Run with:
+#   docker compose -f docker-compose.test.yml up --build \
+#       --abort-on-container-exit --exit-code-from test
+#
+# The application image (Dockerfile) does NOT copy tests/ — that is deliberate,
+# so production images stay lean. The test service therefore reuses the app image
+# for its installed dependencies and bind-mounts the repository at /app so the
+# tests, sample data and migrations are all available at runtime.
+#
+# No real OpenAI key and no network are required: MOCK_LLM_ENABLED=true and the
+# smoke test uses the deterministic mock LLM. The smoke test creates its own
+# schema from migrations/001_initial_schema.sql, and only ever truncates a
+# database whose URL names a test/smoke/ci target (here: ai_export_smoke).
+# =============================================================================
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_export_smoke
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_export_smoke"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/ai_export_smoke
+      SMOKE_TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/ai_export_smoke
+      MOCK_LLM_ENABLED: "true"
+      OPENAI_API_KEY: ""
+      KB_ENABLED: "false"
+    # Bind-mount the repo so tests/ (not copied into the app image) is available.
+    volumes:
+      - .:/app
+    command: python -m pytest tests/unit/ tests/smoke/ -v

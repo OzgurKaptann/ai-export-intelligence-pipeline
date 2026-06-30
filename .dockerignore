@@ -1,0 +1,36 @@
+# Keep the build context small and reproducible.
+
+# Python caches / artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Version control / specs / docs (not needed inside the image)
+.git/
+.gitignore
+.kiro/
+docs/
+
+# Local environment / secrets — never bake into an image
+.env
+.env.local
+
+# Editor / OS / tooling
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+*.log

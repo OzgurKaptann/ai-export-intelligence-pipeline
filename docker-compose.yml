@@ -1,0 +1,69 @@
+# =============================================================================
+# docker-compose.yml — local stack for the AI Export Intelligence Pipeline
+# (Task 25)
+#
+#   db        — PostgreSQL 15 with a persistent named volume
+#   app       — FastAPI service (runs migrations, then uvicorn) on :8000
+#   dashboard — Streamlit read-only dashboard on :8501
+#
+# Run with:   docker compose up --build
+# Health:     GET http://localhost:8000/health  ->  {"status": "ok"}
+# Dashboard:  http://localhost:8501
+#
+# All values here are local development defaults only — no real secrets.
+# MOCK_LLM_ENABLED=true means no OpenAI key is required.
+# =============================================================================
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_export
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_export"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/ai_export
+      MOCK_LLM_ENABLED: "true"
+      OPENAI_API_KEY: ""
+      KB_ENABLED: "false"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status == 200 else sys.exit(1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    environment:
+      API_BASE_URL: http://app:8000
+
+volumes:
+  pgdata:
