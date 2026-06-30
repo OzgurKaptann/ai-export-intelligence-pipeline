@@ -41,6 +41,13 @@ class FakeRepository:
         self.raw_leads.append(raw_lead)
         return raw_lead["raw_lead_id"]
 
+    def get_raw_lead_by_idempotency_key(self, idempotency_key: str):
+        """Mirror the real repository lookup used for skip-mode dedup."""
+        for raw_lead in self.raw_leads:
+            if raw_lead.get("idempotency_key") == idempotency_key:
+                return raw_lead
+        return None
+
     def insert_validated_lead(self, validated_lead: dict) -> str:
         self.validated_leads.append(validated_lead)
         return validated_lead["validated_lead_id"]
@@ -218,6 +225,66 @@ def test_invalid_row_does_not_stop_valid_rows(tmp_path):
 
     assert result.total == 3
     assert result.inserted == 2
+    assert result.failed == 1
+    assert len(repo.raw_leads) == 2
+    assert len(repo.validated_leads) == 2
+    assert len(repo.validation_errors) == 1
+
+
+# ---------------------------------------------------------------------------
+# Duplicate business identity (skip-mode idempotency)
+# ---------------------------------------------------------------------------
+
+# Same company_name / contact_email / product_category / target_market as
+# VALID_ROW (so the same idempotency key) but different phone and revenue —
+# exactly the kind of duplicate the sample data contains.
+DUPLICATE_OF_VALID_ROW = (
+    "Acme Exports Ltd,contact@acme.example.com,Electronics,+1-555-9999,2000000,Germany"
+)
+
+
+def test_duplicate_business_identity_is_skipped_not_crashed(tmp_path):
+    repo = FakeRepository()
+    path = write_csv(tmp_path, [VALID_ROW, DUPLICATE_OF_VALID_ROW])
+
+    # Must not raise — the duplicate is skipped, not inserted twice.
+    result = ingest_csv_file(path, RUN_ID, repo)
+
+    assert result.total == 2
+    assert result.inserted == 1
+    assert result.skipped == 1
+    assert result.failed == 0
+
+
+def test_duplicate_only_inserts_first_occurrence(tmp_path):
+    repo = FakeRepository()
+    path = write_csv(tmp_path, [VALID_ROW, DUPLICATE_OF_VALID_ROW])
+
+    ingest_csv_file(path, RUN_ID, repo)
+
+    # Only the first occurrence reaches raw_leads and validated_leads.
+    assert len(repo.raw_leads) == 1
+    assert len(repo.validated_leads) == 1
+    assert repo.validation_errors == []
+    # The stored row is the first occurrence (original phone/revenue).
+    assert repo.raw_leads[0]["contact_phone"] == "+1-555-0100"
+
+
+def test_duplicate_and_invalid_rows_handled_together(tmp_path):
+    repo = FakeRepository()
+    invalid = "Acme Exports Ltd,not-an-email,Electronics,,,Germany"
+    other_valid = "Globex Trading,sales@globex.example.com,Textiles,,,France"
+    path = write_csv(
+        tmp_path, [VALID_ROW, DUPLICATE_OF_VALID_ROW, invalid, other_valid]
+    )
+
+    result = ingest_csv_file(path, RUN_ID, repo)
+
+    # Valid non-duplicate rows still insert; duplicate is skipped; invalid row
+    # still records a validation error.
+    assert result.total == 4
+    assert result.inserted == 2
+    assert result.skipped == 1
     assert result.failed == 1
     assert len(repo.raw_leads) == 2
     assert len(repo.validated_leads) == 2
