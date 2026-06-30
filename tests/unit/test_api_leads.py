@@ -220,9 +220,10 @@ def test_endpoints_do_not_require_openai_api_key(client_with_repo, monkeypatch):
     assert client.get("/leads").status_code == 200
 
 
-def test_no_task_21_routes_added():
+def test_leads_routes_still_registered():
+    # The /leads routes must remain registered alongside the Task 21 additions.
     paths = {route.path for route in app.routes if hasattr(route, "path")}
-    assert not any(p.startswith("/pipeline-runs") for p in paths)
+    assert any(p.startswith("/leads") for p in paths)
 
 
 def test_health_still_returns_ok():
