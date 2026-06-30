@@ -243,7 +243,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - Generate random pipeline outcomes (total, valid, invalid, enriched, failed, scored) → generate report → assert `valid + invalid = total` and `enriched + failed <= valid`
   - _Test file: `tests/properties/test_quality_report_counts.py`_
 
-- [ ] 19. FastAPI application scaffold and database dependency
+- [x] 19. FastAPI application scaffold and database dependency
   - Implement `src/api/main.py` with FastAPI app instance, lifespan context manager, and `/health` endpoint
   - Add database session dependency `get_db()` from `src/database/session.py` using `Depends()`
   - Configure CORS middleware for dashboard access

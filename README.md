@@ -5,8 +5,8 @@
 This project is being developed as a production-oriented data pipeline, not just a simple AI demo.  
 It focuses on clean architecture, database-first design, validation, testing and step-by-step implementation.
 
-> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate, the enrichment retry orchestration loop, the lead scoring module, the knowledge base stub, the pipeline orchestrator (with `pipeline_run` lifecycle tracking) and data quality report generation completed.  
-> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`), the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`) and unit-testable data quality report generation (`generate_report`; counts each stage's rows for a run and stores one `data_quality_reports` row) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far), FastAPI, the Streamlit dashboard, Docker, and full PostgreSQL/Docker integration and smoke tests are planned for upcoming iterations.
+> **Current status:** Foundation layer, CSV ingestion, structured logging, the deterministic mock LLM provider, the enrichment prompt builder, the retry policy classifier, the LLM enrichment module with validation gate, the enrichment retry orchestration loop, the lead scoring module, the knowledge base stub, the pipeline orchestrator (with `pipeline_run` lifecycle tracking), data quality report generation and the FastAPI application scaffold (`/health` endpoint, `get_db` dependency, local CORS) completed.  
+> Idempotency key generation, CSV ingestion, structured logging, the mock LLM provider, the prompt builder, the retry policy classifier, the mock-mode LLM enrichment module (with `EnrichmentOutputSchema` validation gate), the retry orchestration loop (exponential backoff with jitter over the retryable failure taxonomy), the lead scoring module (0–100 weighted score with breakdown storage), the knowledge base stub (`retrieve_context` returns `None`; `is_enabled` reads `KB_ENABLED`), the unit-testable pipeline orchestrator (`PipelineOrchestrator.run`; creates the `pipeline_runs` record, ingests, enriches each validated lead, scores successes and updates the run to `completed`/`failed`), unit-testable data quality report generation (`generate_report`; counts each stage's rows for a run and stores one `data_quality_reports` row) and the FastAPI application scaffold (`src.api.main:app` with an async `lifespan`, a deterministic `GET /health` returning `{"status": "ok"}`, the re-exported `get_db` session dependency and local-development CORS — no settings load, session or database connection at import time) are implemented; real knowledge base retrieval (RAG / vector search), real OpenAI enrichment (boundary only so far), the FastAPI business routes (leads, pipeline runs), the Streamlit dashboard, Docker, and full PostgreSQL/Docker integration and smoke tests are planned for upcoming iterations.
 
 ---
 
@@ -58,14 +58,15 @@ Completed so far:
 - Knowledge base module stub (`KnowledgeBaseModule`; `retrieve_context(product_category, target_market)` always returns `None`, `is_enabled` reads `KB_ENABLED` lazily through an injectable settings provider — no import-time side effects, no embeddings, no vector store, no real retrieval yet)
 - Pipeline orchestrator with `pipeline_run` tracking (`PipelineOrchestrator.run`; generates the `pipeline_run_id`, creates the `pipeline_runs` record with `status="in_progress"` and `started_at`, calls CSV ingestion, then for each validated lead calls `enrich_with_retry` and — only on success — `score_lead`, isolating per-lead failures so one bad lead never stops the run, generates the run's data quality report, and updates the run to `completed`/`failed` with `finished_at` and counts; fully dependency-injected — `session_factory`, `repository_factory`, ingestion function, enrichment/scorer modules, the data quality report function, `uuid_factory` and `clock` are all injectable — opens exactly one session per run and reuses it for every lead, with no import-time settings load or session creation, no API key and no network)
 - Data quality report generation (`src/pipeline/data_quality.generate_report`; counts `raw_leads` (total), `validated_leads` (valid), `validation_errors` (invalid), successful vs failed `enrichments`, and `scored_leads` for a given `pipeline_run_id`, then stores one `data_quality_reports` row through the injected repository; reuses the orchestrator's single session and never opens its own, and report generation is best-effort so a reporting failure never demotes an otherwise completed run — no API key, no network)
-- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier, the LLM enrichment module, the enrichment retry orchestration, the lead scoring module, the knowledge base stub, the pipeline orchestrator and data quality report generation
-- **364 passing unit tests**
+- FastAPI application scaffold (`src/api/main.py`; importable as `src.api.main:app`, async `lifespan` context manager, deterministic `GET /health` returning `{"status": "ok"}`, the `get_db` database session dependency re-exported from `src/database/session.py` for `Depends()`, and local-development CORS for the Streamlit/front-end dashboard origins — no settings load, no session and no database connection at import time)
+- Unit tests for configuration, schemas, ORM models, repository behavior, CSV ingestion, logging setup, the mock LLM provider, the prompt builder, the retry policy classifier, the LLM enrichment module, the enrichment retry orchestration, the lead scoring module, the knowledge base stub, the pipeline orchestrator, data quality report generation and the FastAPI scaffold (`/health`, CORS, keyless/DB-less import)
+- **376 passing unit tests**
 
 Planned next:
 
 - Real knowledge base retrieval (RAG / vector search)
 - Real OpenAI enrichment integration (production wiring)
-- FastAPI endpoints
+- FastAPI business routes (leads, pipeline runs)
 - Streamlit dashboard
 - Docker Compose setup
 - PostgreSQL integration tests
@@ -307,7 +308,7 @@ Current completed commits include:
 | Migration | Raw SQL migration scripts |
 | Testing | pytest |
 | Property Testing | Hypothesis |
-| API | FastAPI planned |
+| API | FastAPI (scaffold + `/health`) |
 | Dashboard | Streamlit planned |
 | AI Enrichment | OpenAI / Mock LLM planned |
 | Containerization | Docker Compose planned |
@@ -375,12 +376,13 @@ Current unit test coverage includes:
 - lead scoring behavior (formula correctness, all-zeros/all-ones edge cases, score bounds, missing/invalid component defaulting, breakdown storage, injected session reuse, no input mutation),
 - knowledge base stub behavior (`retrieve_context` always returns `None`, `is_enabled` reads `KB_ENABLED` lazily through an injectable settings provider, no import-time side effects, no input mutation),
 - pipeline orchestrator behavior (run lifecycle from `in_progress` to `completed`/`failed`, ingestion called with the generated `pipeline_run_id`, enrichment of every validated lead, scoring of only successfully enriched leads, per-lead enrichment/scoring failures not stopping the run, single injected session reused across all leads, data quality report generated after completion and skipped on pipeline-level failure, no `OPENAI_API_KEY` and no external API),
-- data quality report generation behavior (per-stage row counts scoped to a `pipeline_run_id`, `valid_records + invalid_records == total_records` for consistent data, zero-record runs returning zero counts, persistence through the repository, injected-session reuse with no internally created session, no external API).
+- data quality report generation behavior (per-stage row counts scoped to a `pipeline_run_id`, `valid_records + invalid_records == total_records` for consistent data, zero-record runs returning zero counts, persistence through the repository, injected-session reuse with no internally created session, no external API),
+- FastAPI scaffold behavior (`app` imports as a `FastAPI` instance, `GET /health` returns `200` with `{"status": "ok"}`, `/health` needs no `DATABASE_URL` or `OPENAI_API_KEY`, CORS middleware is registered and answers local dashboard origins, the `get_db` dependency forwards `src.database.session.get_db`, importing the app opens no database connection, and no Task 20+ business routes are registered).
 
 Latest local result:
 
 ```text
-364 passed
+376 passed
 ```
 
 ---
@@ -464,9 +466,8 @@ LOG_LEVEL=INFO
 
 ### API and Dashboard
 
-- FastAPI health and pipeline endpoints
-- Scored lead listing
-- Pipeline run reports
+- FastAPI application scaffold (`/health` endpoint, `get_db` dependency, local CORS) — **implemented**
+- FastAPI business endpoints (scored lead listing, pipeline run reports)
 - Streamlit dashboard
 - Lead ranking views
 - Quality metrics visualization
@@ -508,11 +509,12 @@ Amaç; CSV gibi ham veri kaynaklarından gelen lead kayıtlarını doğrulamak, 
 - knowledge base modülü stub’ı (`KnowledgeBaseModule`; `retrieve_context(product_category, target_market)` her zaman `None` döner, `is_enabled` ise `KB_ENABLED` değerini enjekte edilebilir bir settings sağlayıcısı üzerinden lazy olarak okur; import anında yan etki yoktur, henüz embedding, vektör veritabanı veya gerçek bağlam getirme uygulanmamıştır),
 - pipeline orkestratörü ve `pipeline_run` takibi (`PipelineOrchestrator.run`; `pipeline_run_id` üretir, `pipeline_runs` kaydını `status="in_progress"` ve `started_at` ile oluşturur, CSV ingestion’ı çağırır, ardından her doğrulanmış lead için `enrich_with_retry` çağırır ve yalnızca başarılı olanları `score_lead` ile skorlar; her lead’i ayrı ayrı izole eder, böylece tek bir hatalı lead tüm akışı durdurmaz; sonunda kaydı `finished_at` ve sayaçlarla `completed`/`failed` olarak günceller; tamamen bağımlılık enjeksiyonludur — `session_factory`, `repository_factory`, ingestion fonksiyonu, enrichment/scorer modülleri, `uuid_factory` ve `clock` enjekte edilebilir — çalışma başına tek bir session açıp tüm lead’ler için yeniden kullanır; import anında ayar yüklemez, session oluşturmaz, API anahtarı ve ağ erişimi gerektirmez),
 - veri kalitesi raporu üretimi (`src/pipeline/data_quality.generate_report`; belirli bir `pipeline_run_id` için `raw_leads` (toplam), `validated_leads` (geçerli), `validation_errors` (geçersiz), başarılı ve başarısız `enrichments` ile `scored_leads` sayımlarını yapar ve tek bir `data_quality_reports` satırını enjekte edilen repository üzerinden saklar; orkestratörün tek session’ını yeniden kullanır, kendi session’ını açmaz ve rapor üretimi en iyi çaba ilkesiyle çalışır — raporlama hatası tamamlanmış bir çalışmayı asla `failed` durumuna düşürmez; API anahtarı ve ağ erişimi gerektirmez),
+- FastAPI uygulama iskeleti (`src/api/main.py`; `src.api.main:app` olarak import edilebilir, async `lifespan` context manager içerir, deterministik `GET /health` ucu `{"status": "ok"}` döner, `src/database/session.py` içindeki `get_db` veritabanı session bağımlılığını `Depends()` için yeniden dışa aktarır ve Streamlit/front-end dashboard kaynakları için yerel geliştirme CORS yapılandırması sağlar; import anında ayar yüklemez, session oluşturmaz ve veritabanına bağlanmaz),
 - unit testler.
 
-Toplam **364 unit test** başarıyla geçmektedir.
+Toplam **376 unit test** başarıyla geçmektedir.
 
-Gelecek aşamalarda gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), FastAPI endpoint’leri, Streamlit dashboard, Docker Compose ve tam PostgreSQL/Docker entegrasyon ve smoke testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir; tam Docker/PostgreSQL entegrasyonu ise henüz planlanmaktadır.
+Gelecek aşamalarda gerçek knowledge base bağlam getirme (RAG / vektör arama), gerçek OpenAI enrichment entegrasyonu (üretim bağlantısı), FastAPI iş uçları (lead ve pipeline run route’ları), Streamlit dashboard, Docker Compose ve tam PostgreSQL/Docker entegrasyon ve smoke testleri eklenecektir. Pipeline orkestratörü ve veri kalitesi raporu üretimi uygulanmıştır ve sahte bağımlılıklarla unit test edilebilir; tam Docker/PostgreSQL entegrasyonu ise henüz planlanmaktadır.
 
 Bu proje özellikle Data Analyst, Analytics Engineer ve Data Engineer rollerine geçiş sürecinde; veri kalitesi, pipeline tasarımı, database modeling, AI enrichment ve test odaklı geliştirme becerilerini göstermek için hazırlanmıştır.
 
