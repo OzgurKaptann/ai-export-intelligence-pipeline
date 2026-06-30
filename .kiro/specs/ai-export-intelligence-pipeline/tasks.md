@@ -253,7 +253,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** `uvicorn src.api.main:app --reload` starts without errors; `GET /health` returns `{"status": "ok"}`
   - **Suggested commit:** `feat(api): add fastapi app scaffold with health endpoint`
 
-- [ ] 20. FastAPI leads routes
+- [x] 20. FastAPI leads routes
   - Implement `src/api/routes/leads.py` with 3 routes:
     - `GET /leads?min_score={float}` → list all scored leads, optional filter by min_score
     - `GET /leads/{lead_id}` → single lead by UUID (404 if not found)

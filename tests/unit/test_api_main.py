@@ -129,15 +129,20 @@ def test_import_does_not_open_database_connection():
 
 
 # ---------------------------------------------------------------------------
-# No Task 20+ routes
+# Registered routes
 # ---------------------------------------------------------------------------
 
-def test_only_scaffold_routes_registered():
+def test_health_and_leads_routes_registered():
     paths = {route.path for route in app.routes if hasattr(route, "path")}
     # The health route is present...
     assert "/health" in paths
-    # ...and none of the planned business routes have been added yet.
-    for leaked in ("/leads", "/pipeline-runs"):
-        assert not any(p.startswith(leaked) for p in paths), (
-            f"unexpected route present: {leaked}"
-        )
+    # ...and Task 20 intentionally adds the /leads routes.
+    assert any(p.startswith("/leads") for p in paths), "leads routes missing"
+
+
+def test_no_pipeline_runs_routes_yet():
+    # Task 21 routes must not have leaked in with Task 20.
+    paths = {route.path for route in app.routes if hasattr(route, "path")}
+    assert not any(p.startswith("/pipeline-runs") for p in paths), (
+        "unexpected /pipeline-runs route present"
+    )
