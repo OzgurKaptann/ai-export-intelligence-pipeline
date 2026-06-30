@@ -94,7 +94,8 @@ def ingest_csv_file(
     -------
     IngestionResult
         ``total`` rows read, ``inserted`` valid rows, ``failed`` invalid rows.
-        ``skipped`` is always 0 (duplicate handling is not implemented yet).
+        ``skipped`` counts valid rows whose business identity (idempotency
+        key) was already ingested in this run — skip-mode duplicate handling.
 
     Raises
     ------
@@ -110,14 +111,17 @@ def ingest_csv_file(
             raw_csv_row = dict(row)
             result.total += 1
             try:
-                _ingest_row(raw_csv_row, pipeline_run_id, repository)
+                inserted = _ingest_row(raw_csv_row, pipeline_run_id, repository)
             except ValidationError as exc:
                 _record_validation_error(
                     raw_csv_row, pipeline_run_id, repository, exc
                 )
                 result.failed += 1
             else:
-                result.inserted += 1
+                if inserted:
+                    result.inserted += 1
+                else:
+                    result.skipped += 1
 
     return result
 
@@ -126,8 +130,13 @@ def _ingest_row(
     raw_csv_row: dict,
     pipeline_run_id: str,
     repository: PipelineRepository,
-) -> None:
+) -> bool:
     """Validate and persist a single valid row.
+
+    Returns ``True`` when the row was inserted into ``raw_leads`` /
+    ``validated_leads`` and ``False`` when it was skipped as a duplicate of an
+    already-ingested business identity (skip mode).  Skipping the duplicate
+    avoids violating the ``raw_leads.idempotency_key`` unique constraint.
 
     Raises :class:`ValidationError` if the row fails schema validation; the
     caller is responsible for recording the failure so that one bad row does
@@ -137,6 +146,9 @@ def _ingest_row(
     lead_data = lead.model_dump()
 
     idempotency_key = generate_idempotency_key(lead)
+    if _is_duplicate(repository, idempotency_key):
+        return False
+
     raw_lead_id = str(uuid4())
     validated_lead_id = str(uuid4())
     now = _utcnow()
@@ -167,6 +179,23 @@ def _ingest_row(
     for field in _OPTIONAL_FIELDS:
         validated_lead[field] = lead_data[field]
     repository.insert_validated_lead(validated_lead)
+
+    return True
+
+
+def _is_duplicate(repository: PipelineRepository, idempotency_key: str) -> bool:
+    """Return ``True`` when a raw_lead with *idempotency_key* already exists.
+
+    Skip-mode duplicate detection delegates to the repository's
+    ``get_raw_lead_by_idempotency_key`` lookup.  When the injected repository
+    does not expose that method (for example a minimal test double), duplicate
+    detection is disabled and every validated row is treated as new — the
+    smallest possible behaviour that keeps existing callers working.
+    """
+    lookup = getattr(repository, "get_raw_lead_by_idempotency_key", None)
+    if lookup is None:
+        return False
+    return lookup(idempotency_key) is not None
 
 
 def _record_validation_error(

@@ -290,7 +290,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Acceptance criteria:** CSV file has 20 rows + header; pipeline processes it without crashing
   - **Suggested commit:** `data: add synthetic sample leads csv with 20 records`
 
-- [ ] 23. Checkpoint — full pipeline smoke test with mock LLM
+- [x] 23. Checkpoint — full pipeline smoke test with mock LLM
   - Run the complete pipeline against `data/sample/leads.csv` with `MOCK_LLM_ENABLED=true` and a local PostgreSQL instance
   - Verify: `pipeline_runs` has 1 row with `status=completed`; `raw_leads` has expected count; `enrichments` has `status=success` rows; `scored_leads` populated; `data_quality_reports` has 1 row
   - Add `tests/smoke/test_pipeline_smoke.py` that executes this verification automatically
