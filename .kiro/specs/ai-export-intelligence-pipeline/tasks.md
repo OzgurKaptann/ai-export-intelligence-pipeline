@@ -279,7 +279,7 @@ Build the pipeline incrementally, starting with scaffolding and infrastructure, 
   - **Suggested commit:** `feat(api): add pipeline runs and quality report routes`
 
 
-- [ ] 22. Synthetic sample data generation
+- [x] 22. Synthetic sample data generation
   - Write `data/sample/generate_sample_data.py` script that generates `data/sample/leads.csv` with 20 synthetic lead records
   - Include all required fields; vary `product_category` and `target_market` values; use plausible-but-fictional company names and emails
   - Include 1 duplicate row (to test idempotency), 1 row with missing `contact_email`, 1 row with missing `product_category`
